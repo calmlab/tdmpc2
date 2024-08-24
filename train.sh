@@ -1,4 +1,4 @@
-python tdmpc2/train.py task=walker-walk
+python tdmpc2/dialectic_train.py task=walker-walk
 
 # $ python train.py task=mt80 model_size=48 batch_size=1024
 # $ python train.py task=mt30 model_size=317 batch_size=1024
