@@ -17,6 +17,76 @@ def get_model_and_assets():
     """Returns a tuple containing the model XML string and a dict of assets."""
     return resources.GetResource(os.path.join(_TASKS_DIR, 'walker.xml')), common.ASSETS
 
+# [action]
+# motor: right_hip
+# motor: right_knee
+# motor: right_ankle
+# motor: left_hip
+# motor: left_knee
+# motor: left_ankle
+
+# [observation]
+# orientation: torso xx
+# orientation: torso xz
+# orientation: right_thigh xx
+# orientation: right_thigh xz
+# orientation: right_leg  xx
+# orientation: right_leg  xz
+# orientation: right_foot  xx
+# orientation: right_foot  xz
+# orientation: left_thigh  xx
+# orientation: left_thigh  xz
+# orientation: left_leg  xx
+# orientation: left_leg  xz
+# orientation: left_foot  xx
+# orientation: left_foot  xz
+# height
+# velocity: rootz
+# velocity: rootx
+# velocity: rooty
+# velocity: right_hip
+# velocity: right_knee
+# velocity: right_ankle
+# velocity: left_hip
+# velocity: left_knee
+# velocity: left_ankle
+
+ACTION_DESCRIPTIONS = [
+    {'index': 0, 'object': 'right_hip', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': True, 'right_actor': False},
+    {'index': 1, 'object': 'right_knee', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': True, 'right_actor': False},
+    {'index': 2, 'object': 'right_ankle', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': True, 'right_actor': False},
+    {'index': 3, 'object': 'left_hip', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': False, 'right_actor': True},
+    {'index': 4, 'object': 'left_knee', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': False, 'right_actor': True},
+    {'index': 5, 'object': 'left_ankle', 'min': -1, 'max': 1, 'object_type': 'motor', 'action_type': 'continuous', 'left_actor': False, 'right_actor': True},
+]
+
+OBSERVATION_DESCRIPTIONS = [
+    {'index': 0, 'object': 'torso', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': True, 'right_actor': True},
+    {'index': 1, 'object': 'torso', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': True, 'right_actor': True},
+    {'index': 2, 'object': 'right_thigh', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': True, 'right_actor': False},
+    {'index': 3, 'object': 'right_thigh', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': True, 'right_actor': False},
+    {'index': 4, 'object': 'right_leg', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': True, 'right_actor': False},
+    {'index': 5, 'object': 'right_leg', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': True, 'right_actor': False},
+    {'index': 6, 'object': 'right_foot', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': True, 'right_actor': False},
+    {'index': 7, 'object': 'right_foot', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': True, 'right_actor': False},
+    {'index': 8, 'object': 'left_thigh', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': False, 'right_actor': True},
+    {'index': 9, 'object': 'left_thigh', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': False, 'right_actor': True},
+    {'index': 10, 'object': 'left_leg', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': False, 'right_actor': True},
+    {'index': 11, 'object': 'left_leg', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': False, 'right_actor': True},
+    {'index': 12, 'object': 'left_foot', 'object_type': 'orientation', 'axis': 'xx', 'left_actor': False, 'right_actor': True},
+    {'index': 13, 'object': 'left_foot', 'object_type': 'orientation', 'axis': 'xz', 'left_actor': False, 'right_actor': True},
+    {'index': 14, 'object': 'torso', 'object_type': 'height', 'left_actor': True, 'right_actor': True},
+    {'index': 15, 'object': 'rootz', 'object_type': 'velocity', 'left_actor': True, 'right_actor': True},
+    {'index': 16, 'object': 'rootx', 'object_type': 'velocity', 'left_actor': True, 'right_actor': True},
+    {'index': 17, 'object': 'rooty', 'object_type': 'velocity', 'left_actor': True, 'right_actor': True},
+    {'index': 18, 'object': 'right_hip', 'object_type': 'velocity', 'left_actor': True, 'right_actor': False},
+    {'index': 19, 'object': 'right_knee', 'object_type': 'velocity', 'left_actor': True, 'right_actor': False},
+    {'index': 20, 'object': 'right_ankle', 'object_type': 'velocity', 'left_actor': True, 'right_actor': False},
+    {'index': 21, 'object': 'left_hip', 'object_type': 'velocity', 'left_actor': False, 'right_actor': True},
+    {'index': 22, 'object': 'left_knee', 'object_type': 'velocity', 'left_actor': False, 'right_actor': True},
+    {'index': 23, 'object': 'left_ankle', 'object_type': 'velocity', 'left_actor': False, 'right_actor': True},
+]
+
 
 @walker.SUITE.add('custom')
 def walk_backwards(time_limit=walker._DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):

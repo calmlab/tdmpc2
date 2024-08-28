@@ -151,3 +151,20 @@ def enc(cfg, out={}):
 		else:
 			raise NotImplementedError(f"Encoder for observation type {k} not implemented.")
 	return nn.ModuleDict(out)
+
+
+def state_enc(cfg, k, obs_dim, task_dim, num_enc_layers, enc_dim, latent_dim, out={}):
+	"""
+	Returns a dictionary of encoders for each observation in the dict.
+	"""
+	if k == 'state' or k == 'state_l' or k == 'state_r':
+		out[k] = mlp(obs_dim + task_dim, max(num_enc_layers-1, 1)*[enc_dim], latent_dim, act=SimNorm(cfg))
+	else:
+		raise NotImplementedError(f"Encoder for observation type {k} not implemented.")
+	return nn.ModuleDict(out)
+
+
+def rgb_enc(cfg, obs_shape, num_channels, out={}):
+    out['rgb'] = conv(obs_shape, num_channels, act=SimNorm(cfg))
+    return nn.ModuleDict(out)
+

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import importlib
 
 from common import math
 from common.scale import RunningScale
@@ -16,22 +17,54 @@ class DialecticMPC:
 
 	def __init__(self, cfg):
 		self.cfg = cfg
-		self.device = torch.device('cuda')
+  
+		self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
+		self.domain_module = importlib.import_module(f'envs.task.{self.domain}')
+		if 'state' in cfg.obs_shape:
+			del cfg.obs_shape['state']
+			self._get_action_obs_dims()
+			cfg.obs_shape['state_l'] = self.obs_dim_l
+			cfg.obs_shape['state_r'] = self.obs_dim_r
+
+		self.device = torch.device(cfg.device)
 		self.model = DualWorldModel(cfg).to(self.device)
 		self.optim = torch.optim.Adam([
-			{'params': self.model._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
-			{'params': self.model._dynamics.parameters()},
+			{'params': self.model._encoder_l.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
+   			{'params': self.model._encoder_r.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
+			{'params': self.model._dynamics_l.parameters()},
+			{'params': self.model._dynamics_r.parameters()},
 			{'params': self.model._reward.parameters()},
 			{'params': self.model._Qs.parameters()},
 			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []}
 		], lr=self.cfg.lr)
-		self.pi_optim = torch.optim.Adam(self.model._pi.parameters(), lr=self.cfg.lr, eps=1e-5)
+		self.pi_optim = torch.optim.Adam([
+			{'params': self.model._pi_l.parameters()},
+			{'params': self.model._pi_r.parameters()}
+      	], lr=self.cfg.lr, eps=1e-5)
 		self.model.eval()
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
 		self.discount = torch.tensor(
-			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device='cuda'
+			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device=cfg.device
 		) if self.cfg.multitask else self._get_discount(cfg.episode_length)
+  
+	def _get_action_obs_dims(self):
+		def get_dim(desc_list, actor_key):
+			dim = 0
+			for desc in desc_list:
+				if desc[actor_key]:
+					dim += 1
+			return dim
+
+		action_desc = self.domain_module.ACTION_DESCRIPTIONS
+		obs_desc = self.domain_module.OBSERVATION_DESCRIPTIONS
+		self.action_dim_l = get_dim(action_desc, 'left_actor')
+		self.action_dim_r = get_dim(action_desc, 'right_actor')
+		self.obs_dim_l = get_dim(obs_desc, 'left_actor')
+		self.obs_dim_r = get_dim(obs_desc, 'right_actor')
+
+
+    
 
 	def _get_discount(self, episode_length):
 		"""
