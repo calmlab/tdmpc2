@@ -39,6 +39,7 @@ If you prefer to install dependencies manually, start by installing dependencies
 ```
 conda env create -f docker/environment.yaml
 pip install gym==0.21.0
+pip install --upgrade decorator==4.4.2
 ```
 
 The `environment.yaml` file installs dependencies required for training on DMControl tasks. Other domains can be installed by following the instructions in `environment.yaml`.

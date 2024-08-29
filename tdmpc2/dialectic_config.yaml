@@ -8,7 +8,7 @@ obs: state
 # evaluation
 checkpoint: ???
 eval_episodes: 10
-eval_freq: 50000
+eval_freq: 5000
 
 # device
 device: cuda
@@ -68,7 +68,7 @@ simnorm_dim: 8
 wandb_project: dialectic-mujoco
 wandb_entity: calmlab
 wandb_silent: false
-disable_wandb: false
+disable_wandb: true
 save_csv: true
 
 # misc
@@ -89,3 +89,7 @@ action_dims: ???
 episode_lengths: ???
 seed_steps: ???
 bin_size: ???
+obs_dim_l: ???
+obs_dim_r: ???
+action_dim_l: ???
+action_dim_r: ???

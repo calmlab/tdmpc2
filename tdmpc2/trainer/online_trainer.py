@@ -115,3 +115,70 @@ class OnlineTrainer(Trainer):
 			self._step += 1
 	
 		self.logger.finish(self.agent)
+
+class OnlineDialecticTrainer(OnlineTrainer):
+    def __init__(self, cfg, env, agent, buffer_l, buffer_r, logger):
+        self.buffer_l = buffer_l
+        self.buffer_r = buffer_r
+        super().__init__(cfg, env, agent, None, logger)
+
+
+    def train(self):
+        """Train a DialecticImitation agent."""
+        train_metrics, done, eval_next = {}, True, True
+        while self._step <= self.cfg.steps:
+
+            # Evaluate agent periodically
+            if self._step % self.cfg.eval_freq == 0:
+                eval_next = True
+
+            # Reset environment
+            if done:
+                if eval_next:
+                    eval_metrics = self.eval()
+                    eval_metrics.update(self.common_metrics())
+                    self.logger.log(eval_metrics, 'eval')
+                    eval_next = False
+
+                if self._step > 0:
+                    train_metrics.update(
+                        episode_reward=torch.tensor([td['reward'] for td in self._tds[1:]]).sum(),
+                        episode_success=info['success'],
+                    )
+                    train_metrics.update(self.common_metrics())
+                    self.logger.log(train_metrics, 'train')
+                    self._ep_idx = self.buffer_l.add(torch.cat(self._tds_l))
+                    self._ep_idx = self.buffer_r.add(torch.cat(self._tds_r))
+
+                
+                obs = self.env.reset()
+                self._tds_l = [self.to_td(obs)]
+                self._tds_r = [self.to_td(obs)]
+                self.agent.reset()
+
+            # Collect experience
+            if self._step > self.cfg.seed_steps:
+                action, is_act_left = self.agent.act(obs, t0=len(self._tds)==1)
+            else:
+                action, is_act_left = self.agent.rand_act(self.env)
+            obs, reward, done, info = self.env.step(action)
+            if is_act_left:
+                self._tds_l.append(self.to_td(obs, action, reward))
+            else:
+                self._tds_r.append(self.to_td(obs, action, reward))
+
+            # Update agent
+            if self._step >= self.cfg.seed_steps:
+                if self._step == self.cfg.seed_steps:
+                    num_updates = self.cfg.seed_steps
+                    print('Pretraining agent on seed data...')
+                else:
+                    num_updates = 1
+                for _ in range(num_updates):
+                    _train_metrics = self.agent.update(self.buffer)
+                train_metrics.update(_train_metrics)
+
+            self._step += 1
+
+        self.logger.finish(self.agent)
+    
