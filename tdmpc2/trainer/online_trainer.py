@@ -136,9 +136,9 @@ class OnlineDialecticTrainer(OnlineTrainer):
             reward = torch.tensor(float('nan'))
         td = TensorDict(dict(
             obs=obs,
-            action=action.unsqueeze(0).unsqueeze(0),
-            reward=reward.unsqueeze(0).unsqueeze(0),
-        ), batch_size=(1,))
+            action=action,
+            reward=reward,
+        ), batch_size=(1,), device=self.device)
         return td
 
 
@@ -224,14 +224,15 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
             sigma_sq = torch.full_like(self.env.rand_act(), float('nan'))
         td = TensorDict(dict(
             obs=obs,
-            action=action.unsqueeze(0).unsqueeze(0),
-            reward=reward.unsqueeze(0).unsqueeze(0),
-            mu=mu.unsqueeze(0).unsqueeze(0),
-            sigma_sq=sigma_sq.unsqueeze(0).unsqueeze(0),
+            action=action.unsqueeze(0),
+            reward=reward.unsqueeze(0),
+            mu=mu.unsqueeze(0),
+            sigma_sq=sigma_sq.unsqueeze(0),
         ), batch_size=(1,))
         return td
     
     
+    @torch.no_grad()
     def eval(self):
         """Evaluate a TD-MPC2 agent."""
         ep_rewards, ep_successes = [], []
@@ -279,6 +280,7 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 if self._step > 0:
                     # Update agent with last episode data
                     _train_metrics = self.agent.update(self._tds_l, self._tds_r)
+                    self.agent.model.eval()
                     train_metrics.update(_train_metrics)
                     
                     episode_reward = torch.tensor([td['reward'] for td in self._tds_l[1:]]).sum()
@@ -292,13 +294,15 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
 
                 obs = self.env.reset()
                 self.agent.reset()
+                self.agent.model.train()
                 self._ep_idx += 1
-                self._tds_l = [self.to_td(obs)]
-                self._tds_r = [self.to_td(obs)]
+                self._tds_l = []
+                self._tds_r = []
                 data_count = 0
                 
             action, is_act_left, dist = self.agent.act(obs, t0=len(self._tds_l)==1)
-            obs, reward, done, info = self.env.step(action)
+            action_np = action[0].detach().cpu()#.numpy()
+            obs, reward, done, info = self.env.step(action_np)
             if is_act_left:
                 self._tds_l.append(self.to_td(obs, action, reward, dist[0], dist[1]))
             else:

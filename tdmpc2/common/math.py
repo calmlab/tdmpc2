@@ -1,6 +1,11 @@
 import torch
 import torch.nn.functional as F
 
+import math
+
+pi = math.pi
+e = math.e
+
 
 def soft_ce(pred, target, cfg):
 	"""Computes the cross entropy loss between predictions and soft targets."""

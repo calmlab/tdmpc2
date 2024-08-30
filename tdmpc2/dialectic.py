@@ -7,6 +7,7 @@ from common import math
 from common.scale import RunningScale
 from common.dual_world_model import DualModel, DualWorldModel
 
+# import pdb
 
 class DialecticAgent:
     def __init__(self, cfg):
@@ -389,7 +390,6 @@ class DialecticImitation(DialecticAgent):
         self.model.eval()
     
     
-    @torch.no_grad()
     def act(self, obs, t0=False, eval_mode=False, task=None):
         """
         Select an action by planning in the latent space of the world model.
@@ -407,26 +407,31 @@ class DialecticImitation(DialecticAgent):
         if self.brain_switch:  # left brain
             obs = obs[self.obs_filter_l].to(self.device, non_blocking=True).unsqueeze(0)
             brain = self.model._brain_l
-            last_opposite_action = self.last_action_r
+            last_opposite_action = self.last_action_r.detach()
         else:  # right brain
             obs = obs[self.obs_filter_r].to(self.device, non_blocking=True).unsqueeze(0)
             brain = self.model._brain_r
-            last_opposite_action = self.last_action_l
+            last_opposite_action = self.last_action_l.detach()
             
         state = torch.concat([obs, last_opposite_action], dim=1)
+        #assert(not state.requires_grad)
         a = brain(state)
+        # if not eval_mode:
+        #     assert(a.requires_grad)
         brain_action, mu, sigma_sq = self._calculate_action(a, self.action_dim_l if self.brain_switch else self.action_dim_r, eval_mode)
         if self.brain_switch:  # left brain
             self.last_action_l = brain_action
         else:  # right brain
             self.last_action_r = brain_action
         action = torch.concat([self.last_action_l, self.last_action_r], dim=1)
+        # if not eval_mode:
+        #     assert(action.requires_grad)
         return action.cpu(), self.brain_switch, (mu, sigma_sq)
 
         
     def update(self, tds_l, tds_r):
         train_metrics = {}
-        train_metrics.update(self.update_l(tds_l))
+        # train_metrics.update(self.update_l(tds_l))
         train_metrics.update(self.update_r(tds_r))
 
         # Return training statistics
@@ -443,7 +448,7 @@ class DialecticImitation(DialecticAgent):
     
     def entropy(self, sigma_sq):
         pi = torch.tensor([math.pi], device=self.device)
-        return -0.5*(sigma_sq+2*pi.expand_as(sigma_sq)).log()+0.5*math.e
+        return -(0.5*(sigma_sq+2*pi.expand_as(sigma_sq)).log()+0.5*math.e)
     
     
     def _calculate_action(self, a, action_dim, eval_mode):
@@ -457,33 +462,34 @@ class DialecticImitation(DialecticAgent):
             actions = mus + sigmas * eps
             return actions, mus, sigma_sqs
         
+    
     def _calculate_loss(self, rewards, log_probs, entropies):
         R = torch.zeros_like(rewards[0])
         loss = 0
         for i in reversed(range(len(rewards))):
             R = self.gamma * R + rewards[i]
-            loss = loss - (log_probs[i]*R).sum() - (0.0001*entropies[i]).sum()
+            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
         loss = loss / len(rewards)
+        return loss
 
 
+    # REINFORCE update
     def _update(self, brain, optimizer, actions, rewards, mus, sigma_sqs):
-        brain.train()
-        optimizer.zero_grad()
         probs = self.normal(actions, mus, sigma_sqs)
         log_probs = probs.log()
         entropies = self.entropy(sigma_sqs)
         loss = self._calculate_loss(rewards, log_probs, entropies)
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        brain.eval()
         return loss
 
     # REINFORCE (ref. https://dilithjay.com/blog/reinforce-a-quick-introduction-with-code)
     def update_l(self, tds_l):
-        actions = [td['action'] for td in tds_l]
-        rewards = [td['reward'] for td in tds_l]
-        mus = [td['mu'] for td in tds_l]
-        sigma_sqs = [td['sigma_sq'] for td in tds_l]
+        actions = torch.cat([td['action'] for td in tds_l]).to(self.device)
+        rewards = torch.cat([td['reward'] for td in tds_l])
+        mus = torch.cat([td['mu'] for td in tds_l])
+        sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_l])
         actions_l = actions[:, :, self.action_filter_l]
 
         loss = self._update(self.model._brain_l, self.optim_l, actions_l, rewards, mus, sigma_sqs)
@@ -494,11 +500,11 @@ class DialecticImitation(DialecticAgent):
         }
         
     def update_r(self, tds_r):
-        actions = [td['action'] for td in tds_r]
-        rewards = [td['reward'] for td in tds_r]
-        mus = [td['mu'] for td in tds_r]
-        sigma_sqs = [td['sigma_sq'] for td in tds_r]
-        actions_r = actions[:][:, :, self.action_filter_r]
+        actions = torch.cat([td['action'] for td in tds_r]).to(self.device)
+        rewards = torch.cat([td['reward'] for td in tds_r])
+        mus = torch.cat([td['mu'] for td in tds_r])
+        sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_r])
+        actions_r = actions[:, :, self.action_filter_r]
         
         loss = self._update(self.model._brain_r, self.optim_r, actions_r, rewards, mus, sigma_sqs)
         
