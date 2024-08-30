@@ -70,7 +70,7 @@ simnorm_dim: 8
 wandb_project: dialectic-mujoco
 wandb_entity: calmlab
 wandb_silent: false
-disable_wandb: true
+disable_wandb: false
 save_csv: true
 
 # misc

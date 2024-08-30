@@ -414,24 +414,20 @@ class DialecticImitation(DialecticAgent):
             last_opposite_action = self.last_action_l.detach()
             
         state = torch.concat([obs, last_opposite_action], dim=1)
-        #assert(not state.requires_grad)
         a = brain(state)
-        # if not eval_mode:
-        #     assert(a.requires_grad)
         brain_action, mu, sigma_sq = self._calculate_action(a, self.action_dim_l if self.brain_switch else self.action_dim_r, eval_mode)
         if self.brain_switch:  # left brain
             self.last_action_l = brain_action
         else:  # right brain
             self.last_action_r = brain_action
-        action = torch.concat([self.last_action_l, self.last_action_r], dim=1)
-        # if not eval_mode:
-        #     assert(action.requires_grad)
+        action = torch.concat([self.last_action_l, self.last_action_r], dim=1).detach()
         return action.cpu(), self.brain_switch, (mu, sigma_sq)
 
         
     def update(self, tds_l, tds_r):
+        torch.autograd.set_detect_anomaly(True)
         train_metrics = {}
-        # train_metrics.update(self.update_l(tds_l))
+        train_metrics.update(self.update_l(tds_l))
         train_metrics.update(self.update_r(tds_r))
 
         # Return training statistics
@@ -474,39 +470,39 @@ class DialecticImitation(DialecticAgent):
 
 
     # REINFORCE update
-    def _update(self, brain, optimizer, actions, rewards, mus, sigma_sqs):
+    def _update(self, brain, optimizer, actions, rewards, mus, sigma_sqs, retain_graph=False):
         probs = self.normal(actions, mus, sigma_sqs)
         log_probs = probs.log()
         entropies = self.entropy(sigma_sqs)
         loss = self._calculate_loss(rewards, log_probs, entropies)
         optimizer.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph=retain_graph)
         optimizer.step()
         return loss
 
     # REINFORCE (ref. https://dilithjay.com/blog/reinforce-a-quick-introduction-with-code)
-    def update_l(self, tds_l):
+    def update_l(self, tds_l, retain_graph=False):
         actions = torch.cat([td['action'] for td in tds_l]).to(self.device)
         rewards = torch.cat([td['reward'] for td in tds_l])
         mus = torch.cat([td['mu'] for td in tds_l])
         sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_l])
         actions_l = actions[:, :, self.action_filter_l]
 
-        loss = self._update(self.model._brain_l, self.optim_l, actions_l, rewards, mus, sigma_sqs)
+        loss = self._update(self.model._brain_l, self.optim_l, actions_l, rewards, mus, sigma_sqs, retain_graph=retain_graph)
         
         # Return training statistics
         return {
             "loss_l": loss,
         }
         
-    def update_r(self, tds_r):
+    def update_r(self, tds_r, retain_graph=False):
         actions = torch.cat([td['action'] for td in tds_r]).to(self.device)
         rewards = torch.cat([td['reward'] for td in tds_r])
         mus = torch.cat([td['mu'] for td in tds_r])
         sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_r])
         actions_r = actions[:, :, self.action_filter_r]
         
-        loss = self._update(self.model._brain_r, self.optim_r, actions_r, rewards, mus, sigma_sqs)
+        loss = self._update(self.model._brain_r, self.optim_r, actions_r, rewards, mus, sigma_sqs, retain_graph=retain_graph)
         
         # Return training statistics
         return {

@@ -80,18 +80,15 @@ class VideoRecorder:
     def __init__(self, cfg, wandb, fps=15):
         self.cfg = cfg
         self._save_dir = make_dir(cfg.work_dir / 'eval_video')
-        print(colored(f"### VideoRecorder {self._save_dir}", "blue", attrs=["bold"]))
         self._wandb = wandb
         self.fps = fps
         self.frames = []
         self.enabled = False
 
     def init(self, env, enabled=True):
-        print(colored(f"### VideoRecorder init", "blue", attrs=["bold"]))
         self.frames = []
         self.enabled = self._save_dir and self._wandb and enabled
         self.record(env)
-        print(colored(f"### VideoRecorder init OK", "blue", attrs=["bold"]))
 
     def record(self, env):
         if self.enabled:
@@ -109,7 +106,6 @@ class Logger:
     """Primary logging object. Logs either locally or using wandb."""
 
     def __init__(self, cfg):
-        print(colored("### Logger Init.", "blue", attrs=["bold"]))
         self._log_dir = make_dir(cfg.work_dir)
         self._model_dir = make_dir(self._log_dir / "models")
         self._save_csv = cfg.save_csv
@@ -129,8 +125,6 @@ class Logger:
             return
         os.environ["WANDB_SILENT"] = "true" if cfg.wandb_silent else "false"
         import wandb
-        
-        print(colored("### Before wandb.init.", "blue", attrs=["bold"]))
 
         wandb.init(
             project=self.project,
@@ -143,13 +137,11 @@ class Logger:
         )
         print(colored("Logs will be synced with wandb.", "blue", attrs=["bold"]))
         self._wandb = wandb
-        print(colored("### Before _video gen", "blue", attrs=["bold"]))
         self._video = (
             VideoRecorder(cfg, self._wandb)
             if self._wandb and cfg.save_video
             else None
         )
-        print(colored("### Logger OK.", "blue", attrs=["bold"]))
 
     @property
     def video(self):
