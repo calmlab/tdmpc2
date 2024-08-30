@@ -51,7 +51,7 @@ def train(cfg: dict):
     trainer = trainer_cls(
         cfg=cfg,
         env=make_env(cfg),
-        agent=DialecticImitation(cfg),
+        agent=DialecticMPC(cfg),
         buffer_l=Buffer(cfg),
         buffer_r=Buffer(cfg),
         logger=Logger(cfg),

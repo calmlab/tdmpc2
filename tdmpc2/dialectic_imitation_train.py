@@ -14,7 +14,7 @@ from common.buffer import Buffer
 from envs import make_env
 from dialectic import DialecticMPC, DialecticImitation
 from trainer.offline_trainer import OfflineTrainer
-from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer
+from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer, OnlineDialecticImitationTrainer
 from common.logger import Logger
 
 torch.backends.cudnn.benchmark = True
@@ -46,13 +46,11 @@ def train(cfg: dict):
 	set_seed(cfg.seed)
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
 
-	trainer_cls = OfflineTrainer if cfg.multitask else OnlineDialecticTrainer
+	trainer_cls = OfflineTrainer if cfg.multitask else OnlineDialecticImitationTrainer
 	trainer = trainer_cls(
 		cfg=cfg,
 		env=make_env(cfg),
 		agent=DialecticImitation(cfg),
-		buffer_l=Buffer(cfg),
-        buffer_r=Buffer(cfg),
 		logger=Logger(cfg),
 	)
 	trainer.train()
