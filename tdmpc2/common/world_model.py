@@ -170,3 +170,15 @@ class WorldModel(nn.Module):
 		Q1, Q2 = out[np.random.choice(self.cfg.num_q, 2, replace=False)]
 		Q1, Q2 = math.two_hot_inv(Q1, self.cfg), math.two_hot_inv(Q2, self.cfg)
 		return torch.min(Q1, Q2) if return_type == 'min' else (Q1 + Q2) / 2
+
+
+class SingleModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self._brain = layers.mlp(cfg.obs_dim, 2*[cfg.mlp_dim], 2*cfg.action_dim)
+        self.apply(init.weight_init)
+
+    @property
+    def total_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

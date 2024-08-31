@@ -312,3 +312,107 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
             data_count += 1
 
         self.logger.finish(self.agent)
+        
+        
+class OnlineSingleImitationTrainer(OnlineTrainer):
+    def __init__(self, cfg, env, agent, logger):
+        super().__init__(cfg, env, agent, None, logger)
+        
+        
+    def to_td(self, obs, action=None, reward=None, mu=None, sigma_sq=None):
+        """Creates a TensorDict for a new episode."""
+        if isinstance(obs, dict):
+            obs = TensorDict(obs, batch_size=(), device='cpu')
+        else:
+            obs = obs.unsqueeze(0).cpu()
+        if action is None:
+            action = torch.full_like(self.env.rand_act(), float('nan'))
+        if reward is None:
+            reward = torch.tensor(float('nan'))
+        if mu is None:
+            mu = torch.full_like(self.env.rand_act(), float('nan'))
+        if sigma_sq is None:
+            sigma_sq = torch.full_like(self.env.rand_act(), float('nan'))
+        td = TensorDict(dict(
+            obs=obs,
+            action=action.unsqueeze(0),
+            reward=reward.unsqueeze(0),
+            mu=mu.unsqueeze(0),
+            sigma_sq=sigma_sq.unsqueeze(0),
+        ), batch_size=(1,))
+        return td
+        
+        
+    @torch.no_grad()
+    def eval(self):
+        """Evaluate a TD-MPC2 agent."""
+        ep_rewards, ep_successes = [], []
+        for i in range(self.cfg.eval_episodes):
+            obs, done, ep_reward, t = self.env.reset(), False, 0, 0
+            if self.cfg.save_video:
+                self.logger.video.init(self.env, enabled=(i==0))
+            while not done:
+                action, _= self.agent.act(obs, t0=t==0, eval_mode=True)
+                obs, reward, done, info = self.env.step(action)
+                ep_reward += reward
+                t += 1
+                if self.cfg.save_video:
+                    self.logger.video.record(self.env)
+            ep_rewards.append(ep_reward)
+            ep_successes.append(info['success'])
+            if self.cfg.save_video:
+                self.logger.video.save(self._step)
+        return dict(
+            episode_reward=np.nanmean(ep_rewards),
+            episode_success=np.nanmean(ep_successes),
+        )
+
+
+    def train(self):
+        """Train a SingleImitation agent."""
+        train_metrics, done, eval_next = {}, True, True
+        data_count = 0
+        self._tds = []
+        while self._step <= self.cfg.steps:
+
+            # Evaluate agent periodically
+            if self._step % self.cfg.eval_freq == 0:
+                eval_next = True
+
+            # On Episode End 
+            if done:
+                if eval_next:
+                    eval_metrics = self.eval()
+                    eval_metrics.update(self.common_metrics())
+                    self.logger.log(eval_metrics, 'eval')
+                    eval_next = False
+
+                if self._step > 0:
+                    # Update agent with last episode data
+                    _train_metrics = self.agent.update(self._tds)
+                    self.agent.model.eval()
+                    train_metrics.update(_train_metrics)
+                    
+                    episode_reward = torch.tensor([td['reward'] for td in self._tds[1:]]).sum()
+                    train_metrics.update(
+                        episode_reward=episode_reward,
+                        episode_success=info['success'],
+                    )
+                    train_metrics.update(self.common_metrics())
+                    self.logger.log(train_metrics, 'train')
+
+                obs = self.env.reset()
+                self.agent.model.train()
+                self._ep_idx += 1
+                self._tds = []
+                data_count = 0
+                
+            action, dist = self.agent.act(obs, t0=len(self._tds)==1)
+            action_np = action[0].detach().cpu()
+            obs, reward, done, info = self.env.step(action_np)
+            self._tds.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+
+            self._step += 1
+            data_count += 1
+
+        self.logger.finish(self.agent)
