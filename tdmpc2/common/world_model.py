@@ -176,7 +176,7 @@ class SingleModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain = layers.mlp(cfg.obs_dim, 2*[cfg.mlp_dim], 2*cfg.action_dim)
+        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
         self.apply(init.weight_init)
 
     @property
