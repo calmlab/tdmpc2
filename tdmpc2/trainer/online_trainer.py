@@ -241,10 +241,12 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
             if self.cfg.save_video:
                 self.logger.video.init(self.env, enabled=(i==0))
             while not done:
-                # action, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
-                action_l, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
-                action_r, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
-                action = torch.concat([action_l, action_r], dim=1).detach()
+                if self.cfg.act_individually:
+                    action, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                else:
+                    action_l, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                    action_r, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                    action = torch.concat([action_l, action_r], dim=1).detach()
                 obs, reward, done, info = self.env.step(action)
                 ep_reward += reward
                 t += 1
@@ -302,19 +304,23 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 self._tds_l = []
                 self._tds_r = []
                 data_count = 0
-                
-            # action, is_act_left, dist = self.agent.act(obs, t0=len(self._tds_l)==1)
-            action_l, _, dist_l = self.agent.act(obs, t0=len(self._tds_l)==1)
-            action_r, _, dist_r= self.agent.act(obs, t0=len(self._tds_l)==1)
-            action = torch.concat([action_l, action_r], dim=1).detach()
+            
+            if self.cfg.act_individually:    
+                action, is_act_left, dist = self.agent.act(obs, t0=len(self._tds_l)==1)
+            else:
+                action_l, _, dist_l = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_r, _, dist_r= self.agent.act(obs, t0=len(self._tds_l)==1)
+                action = torch.concat([action_l, action_r], dim=1).detach()
             action_np = action[0].detach().cpu()#.numpy()
             obs, reward, done, info = self.env.step(action_np)
-            self._tds_l.append(self.to_td(obs, action, reward, dist_l[0], dist_l[1]))
-            self._tds_r.append(self.to_td(obs, action, reward, dist_r[0], dist_r[1]))
-            # if is_act_left:
-                # self._tds_l.append(self.to_td(obs, action, reward, dist[0], dist[1]))
-            # else:
-                # self._tds_r.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+            if not self.cfg.act_individually:
+                self._tds_l.append(self.to_td(obs, action, reward, dist_l[0], dist_l[1]))
+                self._tds_r.append(self.to_td(obs, action, reward, dist_r[0], dist_r[1]))
+            else:
+                if is_act_left:
+                    self._tds_l.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+                else:
+                    self._tds_r.append(self.to_td(obs, action, reward, dist[0], dist[1]))
 
             self._step += 1
             data_count += 1

@@ -21,6 +21,7 @@ class DialecticAgent:
         cfg.obs_dim_r = self.obs_dim_r
         cfg.action_dim_l = self.action_dim_l
         cfg.action_dim_r = self.action_dim_r
+        self.act_individually = cfg.act_individually
         
 
     def _get_action_obs_dims(self):
@@ -420,9 +421,11 @@ class DialecticImitation(DialecticAgent):
             self.last_action_l = brain_action
         else:  # right brain
             self.last_action_r = brain_action
-        # action = torch.concat([self.last_action_l, self.last_action_r], dim=1).detach()
-        # return action.cpu(), self.brain_switch, (mu, sigma_sq)
-        return brain_action.cpu(), self.brain_switch, (mu, sigma_sq)
+        if self.act_individually:
+            action = torch.concat([self.last_action_l, self.last_action_r], dim=1).detach()
+            return action.cpu(), self.brain_switch, (mu, sigma_sq)
+        else:
+            return brain_action.cpu(), self.brain_switch, (mu, sigma_sq)
 
         
     def update(self, tds_l, tds_r):
