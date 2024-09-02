@@ -333,7 +333,7 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
         super().__init__(cfg, env, agent, None, logger)
         
         
-    def to_td(self, obs, action=None, reward=None, mu=None, sigma_sq=None):
+    def to_td(self, obs, action=None, reward=None, mu=None, sigma_sq=None, value=None, done=None):
         """Creates a TensorDict for a new episode."""
         if isinstance(obs, dict):
             obs = TensorDict(obs, batch_size=(), device='cpu')
@@ -347,12 +347,18 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
             mu = torch.full_like(self.env.rand_act(), float('nan'))
         if sigma_sq is None:
             sigma_sq = torch.full_like(self.env.rand_act(), float('nan'))
+        if value is None:
+            value = torch.tensor(float('nan'))
+        if done is None:
+            done = torch.tensor(float('nan'))
         td = TensorDict(dict(
             obs=obs,
             action=action.unsqueeze(0),
             reward=reward.unsqueeze(0),
             mu=mu.unsqueeze(0),
             sigma_sq=sigma_sq.unsqueeze(0),
+            value=value.unsqueeze(0),
+            done=done.unsqueeze(0),
         ), batch_size=(1,))
         return td
         
@@ -366,7 +372,7 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
             if self.cfg.save_video:
                 self.logger.video.init(self.env, enabled=(i==0))
             while not done:
-                action, _= self.agent.act(obs, t0=t==0, eval_mode=True)
+                action, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
                 obs, reward, done, info = self.env.step(action)
                 ep_reward += reward
                 t += 1
@@ -421,10 +427,11 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
                 self._tds = []
                 data_count = 0
                 
-            action, dist = self.agent.act(obs, t0=len(self._tds)==1)
+            action, dist, value = self.agent.act(obs, t0=len(self._tds)==1)
             action_np = action[0].detach().cpu()
             obs, reward, done, info = self.env.step(action_np)
-            self._tds.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+            done = torch.ones_like(reward) if done else torch.zeros_like(reward)
+            self._tds.append(self.to_td(obs, action, reward, dist[0], dist[1], value, done))
 
             self._step += 1
             data_count += 1
