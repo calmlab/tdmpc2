@@ -333,7 +333,7 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
         super().__init__(cfg, env, agent, None, logger)
         
         
-    def to_td(self, obs, action=None, reward=None, mu=None, sigma_sq=None, value=None, done=None):
+    def to_td(self, obs, action=None, reward=None, mu=None, log_sigma=None, value=None, done=None):
         """Creates a TensorDict for a new episode."""
         if isinstance(obs, dict):
             obs = TensorDict(obs, batch_size=(), device='cpu')
@@ -345,8 +345,8 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
             reward = torch.tensor(float('nan'))
         if mu is None:
             mu = torch.full_like(self.env.rand_act(), float('nan'))
-        if sigma_sq is None:
-            sigma_sq = torch.full_like(self.env.rand_act(), float('nan'))
+        if log_sigma is None:
+            log_sigma = torch.full_like(self.env.rand_act(), float('nan'))
         if value is None:
             value = torch.tensor(float('nan'))
         if done is None:
@@ -356,7 +356,7 @@ class OnlineSingleImitationTrainer(OnlineTrainer):
             action=action.unsqueeze(0),
             reward=reward.unsqueeze(0),
             mu=mu.unsqueeze(0),
-            sigma_sq=sigma_sq.unsqueeze(0),
+            log_sigma=log_sigma.unsqueeze(0),
             value=value.unsqueeze(0),
             done=done.unsqueeze(0),
         ), batch_size=(1,))

@@ -54,9 +54,9 @@ class ReinforceAgent:
         brain = self.model._brain
             
         a = brain(obs)
-        brain_action, mu, sigma_sq = self._calculate_action(a, self.action_dim, eval_mode)
+        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
         action = brain_action.detach()
-        return action.cpu(), (mu, sigma_sq), torch.zeros(1, 1)
+        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1)
 
         
     def update(self, tds):
@@ -76,9 +76,16 @@ class ReinforceAgent:
         return a*b
     
     
-    def entropy(self, sigma_sq):
+    def log_normal(self, x, mu, log_sigma):
         pi = torch.tensor([math.pi], device=self.device)
-        return -(0.5*(sigma_sq+2*pi.expand_as(sigma_sq)).log()+0.5*math.e)
+        sigma = torch.exp(log_sigma)
+        return -((x - mu).pow(2) / (2 * sigma.pow(2))) - log_sigma - 0.5 * torch.log(2 * pi)
+    
+    
+    def entropy(self, log_sigma):
+        pi = torch.tensor([math.pi], device=self.device)
+        sigma = torch.exp(log_sigma)
+        return -(0.5*(sigma.pow(2)+2*pi.expand_as(log_sigma)).log()+0.5*math.e)
     
     
     def _calculate_action(self, a, action_dim, eval_mode):
@@ -86,14 +93,15 @@ class ReinforceAgent:
         if eval_mode:
             return mus, mus, torch.zeros_like(mus).to(self.device)
         else:
-            sigma_sqs = F.softplus(a[:, action_dim:])
-            sigmas = sigma_sqs.sqrt()
-            eps = torch.randn(mus.size()).to(self.device)
+            log_sigmas = a[:, action_dim:]
+            sigmas = torch.exp(log_sigmas)
+            eps = torch.randn_like(sigmas)
             actions = mus + sigmas * eps
-            return actions, mus, sigma_sqs
+            return actions, mus, log_sigmas
         
     
     def _calculate_loss_policy(self, rewards, log_probs, entropies):
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
         R = torch.zeros_like(rewards[0])
         loss = 0
         for i in reversed(range(len(rewards))):
@@ -104,13 +112,14 @@ class ReinforceAgent:
 
 
     # REINFORCE update
-    def _update_p(self, optimizer, actions, rewards, mus, sigma_sqs, retain_graph=False):
-        probs = self.normal(actions, mus, sigma_sqs)
-        log_probs = probs.log()
-        entropies = self.entropy(sigma_sqs)
+    def _update_p(self, optimizer, actions, rewards, mus, log_sigmas, retain_graph=False):
+        log_probs = self.log_normal(actions, mus, log_sigmas)
+        log_probs = torch.clamp(log_probs, min=-100, max=0)  # clamp log_probs to prevent instability
+        entropies = self.entropy(log_sigmas)
         loss = self._calculate_loss_policy(rewards, log_probs, entropies)
         optimizer.zero_grad()
         loss.backward(retain_graph=retain_graph)
+        # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
         optimizer.step()
         return loss
 
@@ -119,9 +128,9 @@ class ReinforceAgent:
         actions = torch.cat([td['action'] for td in tds]).to(self.device)
         rewards = torch.cat([td['reward'] for td in tds])
         mus = torch.cat([td['mu'] for td in tds])
-        sigma_sqs = torch.cat([td['sigma_sq'] for td in tds])
+        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
 
-        loss = self._update_p(self.optim, actions, rewards, mus, sigma_sqs, retain_graph=retain_graph)
+        loss = self._update_p(self.optim, actions, rewards, mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {

@@ -11,7 +11,7 @@ eval_episodes: 10
 eval_freq: 50000
 
 # device
-device: cuda
+device: cuda:1
 
 # training
 steps: 10_000_000

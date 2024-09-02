@@ -60,9 +60,9 @@ class A2CAgent(ReinforceAgent):
             
         a = brain(obs)
         v = value_func(obs)
-        brain_action, mu, sigma_sq = self._calculate_action(a, self.action_dim, eval_mode)
+        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
         action = brain_action.detach()
-        return action.cpu(), (mu, sigma_sq), v
+        return action.cpu(), (mu, log_sigma), v
 
         
     def update(self, tds):
@@ -110,11 +110,11 @@ class A2CAgent(ReinforceAgent):
         if eval_mode:
             return mus, mus, torch.zeros_like(mus).to(self.device)
         else:
-            sigma_sqs = F.softplus(a[:, action_dim:])
-            sigmas = sigma_sqs.sqrt()
-            eps = torch.randn(mus.size()).to(self.device)
+            log_sigmas = a[:, action_dim:]
+            sigmas = torch.exp(log_sigmas)
+            eps = torch.randn_like(sigmas)
             actions = mus + sigmas * eps
-            return actions, mus, sigma_sqs
+            return actions, mus, log_sigmas
         
     
     def _calculate_loss_policy(self, rewards, log_probs, entropies):
@@ -135,9 +135,9 @@ class A2CAgent(ReinforceAgent):
     def update_policy(self, tds, advantages, retain_graph=False):
         actions = torch.cat([td['action'] for td in tds]).to(self.device)
         mus = torch.cat([td['mu'] for td in tds])
-        sigma_sqs = torch.cat([td['sigma_sq'] for td in tds])
+        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
 
-        loss = self._update_p(self.optim_p, actions, advantages.detach(), mus, sigma_sqs, retain_graph=retain_graph)
+        loss = self._update_p(self.optim_p, actions, advantages.detach(), mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {
@@ -149,6 +149,7 @@ class A2CAgent(ReinforceAgent):
         loss = self._calculate_loss_value(values, target_qs)
         optimizer.zero_grad()
         loss.backward(retain_graph=retain_graph)
+        # torch.nn.utils.clip_grad_norm_(self.model._value, max_norm=1.0)
         optimizer.step()
         return loss
         
