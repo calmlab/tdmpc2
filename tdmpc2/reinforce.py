@@ -5,8 +5,7 @@ import importlib
 
 from common import math
 from common.scale import RunningScale
-# from common.dual_world_model import DualModel, DualWorldModel
-from common.world_model import SingleModel
+from common.world_model import SingleModel, SinglePredictiveModel
 
 # import pdb
 
@@ -24,7 +23,7 @@ class ReinforceAgent:
         self.optim = torch.optim.Adam([
 			{'params': self.model._brain.parameters()}
 		], lr=self.cfg.lr)
-        self.gamma = cfg.disconunt_gamma
+        self.gamma = cfg.discount_gamma
         self.model.eval()
         
 
@@ -137,4 +136,42 @@ class ReinforceAgent:
             "loss_p": loss,
         }
         
+    
+    def save(self, fp):
+        """
+        Save state dict of the agent to filepath.
         
+        Args:
+            fp (str): Filepath to save state dict to.
+        """
+        torch.save({"model": self.model.state_dict()}, fp)
+        
+        
+    def load(self, fp):
+        """
+        Load a saved state dict from filepath (or dictionary) into current agent.
+        
+        Args:
+            fp (str or dict): Filepath or state dict to load.
+        """
+        state_dict = fp if isinstance(fp, dict) else torch.load(fp)
+        self.model.load_state_dict(state_dict["model"])
+        
+
+
+class PredictiveReinforceAgent(ReinforceAgent):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
+        self.domain_module = importlib.import_module(f'envs.tasks.{self.domain}')
+        self.device = torch.device(cfg.device)
+        self._get_action_obs_dims()
+        cfg.obs_dim = self.obs_dim
+        cfg.action_dim = self.action_dim
+        
+        self.model = SinglePredictiveModel(cfg).to(self.device)
+        self.optim = torch.optim.Adam([
+			{'params': self.model._brain.parameters()}
+		], lr=self.cfg.lr)
+        self.gamma = cfg.discount_gamma
+        self.model.eval()

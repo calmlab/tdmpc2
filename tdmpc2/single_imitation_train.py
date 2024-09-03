@@ -14,7 +14,7 @@ from common.buffer import Buffer
 from envs import make_env
 # from dialectic import DialecticMPC, DialecticImitation, SingleImitation
 from reinforce import ReinforceAgent
-from a2c import A2CAgent
+from a2c import A2CAgent, A2COneModelAgent
 from trainer.offline_trainer import OfflineTrainer
 from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer, OnlineDialecticImitationTrainer, OnlineSingleImitationTrainer
 from common.logger import Logger
@@ -52,6 +52,8 @@ def train(cfg: dict):
         agent_cls = ReinforceAgent
     elif cfg.agent_class == 'a2c':
         agent_cls = A2CAgent
+    elif cfg.agent_class == 'a2c_one':
+        agent_cls = A2COneModelAgent
     else:
         raise ValueError(f'Invalid agent class: {cfg.agent}')
         
