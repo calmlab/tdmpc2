@@ -101,7 +101,7 @@ class ReinforceAgent:
         
     
     def _calculate_loss_policy(self, rewards, log_probs, entropies):
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
+        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
         R = torch.zeros_like(rewards[0])
         loss = 0
         for i in reversed(range(len(rewards))):
