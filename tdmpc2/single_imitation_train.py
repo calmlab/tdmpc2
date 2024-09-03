@@ -13,7 +13,7 @@ from common.seed import set_seed
 from common.buffer import Buffer
 from envs import make_env
 # from dialectic import DialecticMPC, DialecticImitation, SingleImitation
-from reinforce import ReinforceAgent
+from reinforce import ReinforceAgent, PredictiveReinforceAgent
 from a2c import A2CAgent, A2COneModelAgent
 from trainer.offline_trainer import OfflineTrainer
 from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer, OnlineDialecticImitationTrainer, OnlineSingleImitationTrainer
@@ -50,6 +50,8 @@ def train(cfg: dict):
 
     if cfg.agent_class == 'reinforce':
         agent_cls = ReinforceAgent
+    if cfg.agent_class == 'reinforce_pred':
+        agent_cls = PredictiveReinforceAgent
     elif cfg.agent_class == 'a2c':
         agent_cls = A2CAgent
     elif cfg.agent_class == 'a2c_one':

@@ -197,12 +197,11 @@ class SingleOneModel(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
     
     
-class SinglePredictiveModel(nn.Module):
+class SinglePredictiveOneModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+cfg.obs_dim)
-        self._value = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 1)
+        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+cfg.obs_dim+1)
         self.apply(init.weight_init)
 
     @property

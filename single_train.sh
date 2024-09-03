@@ -1,4 +1,4 @@
-python tdmpc2/single_imitation_train.py task=walker-walk agent_class=a2c_one
+python tdmpc2/single_imitation_train.py task=walker-walk agent_class=reinforce_pred
 # python tdmpc2/train.py task=walker-walk
 # python tdmpc2/dialectic_train.py task=walker-walk
 

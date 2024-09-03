@@ -5,7 +5,7 @@ import importlib
 
 from common import math
 from common.scale import RunningScale
-from common.world_model import SingleModel, SinglePredictiveModel
+from common.world_model import SingleModel, SinglePredictiveOneModel
 
 # import pdb
 
@@ -55,7 +55,7 @@ class ReinforceAgent:
         a = brain(obs)
         brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
         action = brain_action.detach()
-        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1)
+        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), torch.zeros(1, self.obs_dim)
 
         
     def update(self, tds):
@@ -92,7 +92,7 @@ class ReinforceAgent:
         if eval_mode:
             return mus, mus, torch.zeros_like(mus).to(self.device)
         else:
-            log_sigmas = a[:, action_dim:]
+            log_sigmas = a[:, action_dim:2*action_dim]
             sigmas = torch.exp(log_sigmas)
             eps = torch.randn_like(sigmas)
             actions = mus + sigmas * eps
@@ -169,9 +169,80 @@ class PredictiveReinforceAgent(ReinforceAgent):
         cfg.obs_dim = self.obs_dim
         cfg.action_dim = self.action_dim
         
-        self.model = SinglePredictiveModel(cfg).to(self.device)
+        self.model = SinglePredictiveOneModel(cfg).to(self.device)
         self.optim = torch.optim.Adam([
 			{'params': self.model._brain.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
+        
+        
+    def act(self, obs, t0=False, eval_mode=False, task=None):
+        """
+        Select an action by planning in the latent space of the world model.
+
+        Args:
+            obs (torch.Tensor): Observation from the environment.
+            t0 (bool): Whether this is the first observation in the episode.
+            eval_mode (bool): Whether to use the mean of the action distribution.
+            task (int): Task index (only used for multi-task experiments).
+
+        Returns:
+            torch.Tensor: Action to take in the environment.
+        """
+        obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+        brain = self.model._brain
+            
+        output = brain(obs)
+        brain_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
+        pred = self._calculate_prediction(output, self.action_dim, self.obs_dim)
+        action = brain_action.detach()
+        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), pred
+    
+    
+    def _calculate_prediction(self, a, action_dim, obs_dim):
+        return a[:, 2*action_dim:2*action_dim+obs_dim]
+    
+    
+    def update(self, tds):
+        torch.autograd.set_detect_anomaly(True)
+        train_metrics = {}
+        train_metrics.update(self.update_model(tds))
+
+        # Return training statistics
+        return train_metrics
+    
+    
+    def update_model(self, tds, retain_graph=False):
+        actions = torch.cat([td['action'] for td in tds]).to(self.device)
+        rewards = torch.cat([td['reward'] for td in tds])
+        mus = torch.cat([td['mu'] for td in tds])
+        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
+        next_obs = torch.cat([td['obs'] for td in tds]).to(self.device)
+        preds = torch.cat([td['pred'] for td in tds])
+
+        loss_p, loss_d = self._update(self.optim, actions, rewards, mus, log_sigmas, preds, next_obs, retain_graph=retain_graph)
+        
+        # Return training statistics
+        return {
+            "loss_p": loss_p,
+            "loss_d": loss_d,
+        }
+        
+        
+    def _update(self, optimizer, actions, rewards, mus, log_sigmas, preds, next_obs, retain_graph=False):
+        log_probs = self.log_normal(actions, mus, log_sigmas)
+        log_probs = torch.clamp(log_probs, min=-100, max=0)  # clamp log_probs to prevent instability
+        entropies = self.entropy(log_sigmas)
+        loss_p = self._calculate_loss_policy(rewards, log_probs, entropies)
+        loss_d = self._calculate_loss_dynamics(preds, next_obs)
+        loss = loss_p + loss_d
+        optimizer.zero_grad()
+        loss.backward(retain_graph=retain_graph)
+        # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
+        optimizer.step()
+        return loss_p, loss_d
+    
+    
+    def _calculate_loss_dynamics(self, preds, next_obs):
+        return F.mse_loss(preds, next_obs)
