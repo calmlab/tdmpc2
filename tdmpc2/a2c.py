@@ -20,6 +20,9 @@ class A2CAgent(ReinforceAgent):
         cfg.obs_dim = self.obs_dim
         cfg.action_dim = self.action_dim
         
+        self.td_agent = cfg.td_agent
+        self.horizon = cfg.horizon
+        
         self.model = SingleModel(cfg).to(self.device)
         self.optim_p = torch.optim.Adam([
 			{'params': self.model._brain.parameters()}
@@ -29,15 +32,6 @@ class A2CAgent(ReinforceAgent):
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
-        
-
-    # def _get_action_obs_dims(self):
-    #     def get_dim(desc_list):
-    #         return len(desc_list)
-    #     action_desc = self.domain_module.ACTION_DESCRIPTIONS
-    #     obs_desc = self.domain_module.OBSERVATION_DESCRIPTIONS
-    #     self.action_dim = get_dim(action_desc)
-    #     self.obs_dim = get_dim(obs_desc)
         
     
     def act(self, obs, t0=False, eval_mode=False, task=None):
@@ -61,7 +55,7 @@ class A2CAgent(ReinforceAgent):
         v = value_func(obs)
         brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
         action = brain_action.detach()
-        return action.cpu(), (mu, log_sigma), v
+        return action.cpu(), (mu, log_sigma), v, torch.zeros(1, self.obs_dim)
 
         
     def update(self, tds):
@@ -104,26 +98,26 @@ class A2CAgent(ReinforceAgent):
         return advantages
     
     
-    def _calculate_action(self, a, action_dim, eval_mode):
-        mus = a[:, :action_dim]
-        if eval_mode:
-            return mus, mus, torch.zeros_like(mus).to(self.device)
-        else:
-            log_sigmas = a[:, action_dim:2*action_dim]
-            sigmas = torch.exp(log_sigmas)
-            eps = torch.randn_like(sigmas)
-            actions = mus + sigmas * eps
-            return actions, mus, log_sigmas
+    # def _calculate_action(self, a, action_dim, eval_mode):
+    #     mus = a[:, :action_dim]
+    #     if eval_mode:
+    #         return mus, mus, torch.zeros_like(mus).to(self.device)
+    #     else:
+    #         log_sigmas = a[:, action_dim:2*action_dim]
+    #         sigmas = torch.exp(log_sigmas)
+    #         eps = torch.randn_like(sigmas)
+    #         actions = mus + sigmas * eps
+    #         return actions, mus, log_sigmas
         
     
-    def _calculate_loss_policy(self, rewards, log_probs, entropies):
-        R = torch.zeros_like(rewards[0])
-        loss = 0
-        for i in reversed(range(len(rewards))):
-            R = self.gamma * R + rewards[i]
-            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
-        loss = loss / len(rewards)
-        return loss
+    # def _calculate_loss_policy(self, rewards, log_probs, entropies):
+    #     R = torch.zeros_like(rewards[0])
+    #     loss = 0
+    #     for i in reversed(range(len(rewards))):
+    #         R = self.gamma * R + rewards[i]
+    #         loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
+    #     loss = loss / len(rewards)
+    #     return loss
     
     
     def _calculate_loss_value(self, values, target_qs):
@@ -132,16 +126,44 @@ class A2CAgent(ReinforceAgent):
 
     # # REINFORCE (ref. https://dilithjay.com/blog/reinforce-a-quick-introduction-with-code)
     def update_policy(self, tds, advantages, retain_graph=False):
-        actions = torch.cat([td['action'] for td in tds]).to(self.device)
-        mus = torch.cat([td['mu'] for td in tds])
-        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
-
+        # actions = torch.cat([td['action'] for td in tds]).to(self.device)
+        actions, _, mus, log_sigmas, advantages = self.get_policy_train_data(tds, advantages)
         loss = self._update_p(self.optim_p, actions, advantages.detach(), mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {
             "loss_p": loss,
         }
+        
+        
+    def get_policy_train_data(self, _tds, advantages):
+        if self.td_agent:
+            idx = len(_tds) % self.horizon   # horizon으로 나누어 떨어지는 만큼만 데이터로 사용
+            action_list = []
+            reward_list = []
+            mu_list = []
+            log_sigma_list = []
+            advantage_list = []
+            while idx < len(_tds):
+                tds = _tds[idx:min(idx+self.horizon, len(_tds))]
+                action_list.append(torch.cat([td['action'] for td in tds]))
+                reward_list.append(torch.cat([td['reward'] for td in tds]))
+                mu_list.append(torch.cat([td['mu'] for td in tds]))
+                log_sigma_list.append(torch.cat([td['log_sigma'] for td in tds]))
+                advantage_list.append(advantages[idx:min(idx+self.horizon, len(advantages))])
+                idx += self.horizon
+            actions = torch.stack(action_list).permute(1, 0, 2, 3).to(self.device)
+            rewards = torch.stack(reward_list).permute(1, 0).to(self.device)
+            mus = torch.stack(mu_list).permute(1, 0, 2, 3).to(self.device)
+            log_sigmas = torch.stack(log_sigma_list).permute(1, 0, 2, 3).to(self.device)
+            advantages = torch.stack(advantage_list).permute(1, 0).to(self.device)
+        else:
+            actions = torch.cat([td['action'] for td in _tds]).to(self.device)
+            rewards = torch.cat([td['reward'] for td in _tds]).to(self.device)
+            mus = torch.cat([td['mu'] for td in _tds]).to(self.device)
+            log_sigmas = torch.cat([td['log_sigma'] for td in _tds]).to(self.device)
+            
+        return actions, rewards, mus, log_sigmas, advantages
         
     
     def _update_v(self, optimizer, values, target_qs, retain_graph=False):
