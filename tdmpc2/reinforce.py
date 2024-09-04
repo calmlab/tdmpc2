@@ -19,6 +19,9 @@ class ReinforceAgent:
         cfg.obs_dim = self.obs_dim
         cfg.action_dim = self.action_dim
         
+        self.td_agent = cfg.td_agent
+        self.horizon = cfg.horizon
+        
         self.model = SingleModel(cfg).to(self.device)
         self.optim = torch.optim.Adam([
 			{'params': self.model._brain.parameters()}
@@ -100,13 +103,27 @@ class ReinforceAgent:
         
     
     def _calculate_loss_policy(self, rewards, log_probs, entropies):
-        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
-        R = torch.zeros_like(rewards[0])
+        if len(rewards.shape) == 1:
+            rewards = rewards.unsqueeze(0)
+            log_probs = log_probs.unsqueeze(0)
+            entropies = entropies.unsqueeze(0)
+
+        batch_size = rewards.shape[0]
+        seq_length = rewards.shape[1]
+        
+        # R을 배치 크기에 맞게 초기화 (batch_size, 1, 1)
+        R = torch.zeros((batch_size, 1, 1), device=rewards.device)
         loss = 0
-        for i in reversed(range(len(rewards))):
-            R = self.gamma * R + rewards[i]
-            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
-        loss = loss / len(rewards)
+        
+        for i in reversed(range(seq_length)):
+            R = self.gamma * R + rewards[:, i].unsqueeze(-1).unsqueeze(-1)  # (batch_size, 1, 1)
+            
+            # log_probs[i]는 (batch_size, 1, 6) 형태
+            # R은 (batch_size, 1, 1) 형태로, 자동으로 브로드캐스팅됨
+            step_loss = -(log_probs[:, i] * R).sum(dim=(1, 2))  # (batch_size,)
+            loss = loss + step_loss.mean()  # 배치에 대한 평균
+        
+        loss = loss / seq_length
         return loss
 
 
@@ -124,17 +141,41 @@ class ReinforceAgent:
 
     # REINFORCE (ref. https://dilithjay.com/blog/reinforce-a-quick-introduction-with-code)
     def update_policy(self, tds, retain_graph=False):
-        actions = torch.cat([td['action'] for td in tds]).to(self.device)
-        rewards = torch.cat([td['reward'] for td in tds])
-        mus = torch.cat([td['mu'] for td in tds])
-        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
-
+        actions, rewards, mus, log_sigmas = self.get_policy_train_data(tds)
         loss = self._update_p(self.optim, actions, rewards, mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {
             "loss_p": loss,
         }
+        
+        
+    def get_policy_train_data(self, _tds):
+        if self.td_agent:
+            idx = len(_tds) % self.horizon   # horizon으로 나누어 떨어지는 만큼만 데이터로 사용
+            action_list = []
+            reward_list = []
+            mu_list = []
+            log_sigma_list = []
+            while idx < len(_tds):
+                tds = _tds[idx:min(idx+self.horizon, len(_tds))]
+                action_list.append(torch.cat([td['action'] for td in tds]).to(self.device))
+                reward_list.append(torch.cat([td['reward'] for td in tds]))
+                mu_list.append(torch.cat([td['mu'] for td in tds]).to(self.device))
+                log_sigma_list.append(torch.cat([td['log_sigma'] for td in tds]).to(self.device))
+                idx += self.horizon
+            actions = torch.stack(action_list).permute(1, 0, 2, 3).to(self.device)
+            rewards = torch.stack(reward_list).permute(1, 0).to(self.device)
+            mus = torch.stack(mu_list).permute(1, 0, 2, 3).to(self.device)
+            log_sigmas = torch.stack(log_sigma_list).permute(1, 0, 2, 3).to(self.device)
+        else:
+            actions = torch.cat([td['action'] for td in _tds]).to(self.device)
+            rewards = torch.cat([td['reward'] for td in _tds]).to(self.device)
+            mus = torch.cat([td['mu'] for td in _tds]).to(self.device)
+            log_sigmas = torch.cat([td['log_sigma'] for td in _tds]).to(self.device)
+            
+        return actions, rewards, mus, log_sigmas
+        
         
     
     def save(self, fp):

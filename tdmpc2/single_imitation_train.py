@@ -50,7 +50,7 @@ def train(cfg: dict):
 
     if cfg.agent_class == 'reinforce':
         agent_cls = ReinforceAgent
-    if cfg.agent_class == 'reinforce_pred':
+    elif cfg.agent_class == 'reinforce_pred':
         agent_cls = PredictiveReinforceAgent
     elif cfg.agent_class == 'a2c':
         agent_cls = A2CAgent
