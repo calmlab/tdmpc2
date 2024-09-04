@@ -183,3 +183,28 @@ class SingleModel(nn.Module):
     @property
     def total_params(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    
+class SingleOneModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+1)  # +1 for value
+        self.apply(init.weight_init)
+
+    @property
+    def total_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    
+class SinglePredictiveOneModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+cfg.obs_dim+1)
+        self.apply(init.weight_init)
+
+    @property
+    def total_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+

@@ -11,7 +11,7 @@ eval_episodes: 10
 eval_freq: 50000
 
 # device
-device: cuda:1
+device: cuda
 
 # training
 steps: 10_000_000
@@ -28,7 +28,7 @@ tau: 0.01
 discount_denom: 5
 discount_min: 0.95
 discount_max: 0.995
-disconunt_gamma: 0.99
+discount_gamma: 0.99
 buffer_size: 1_000_000
 exp_name: default
 data_dir: ???
@@ -100,3 +100,4 @@ action_dim_r: ???
 dialectic_agent: false
 act_individually: false
 agent_class: reinforce
+td_agent: true

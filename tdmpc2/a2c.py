@@ -5,10 +5,9 @@ import importlib
 
 from common import math
 from common.scale import RunningScale
-# from common.dual_world_model import DualModel, DualWorldModel
-from common.world_model import SingleModel
+from common.world_model import SingleModel, SingleOneModel
 from common.dual_world_model import DualModel
-from reinforce import ReinforceAgent, DialecticBase, DialecticReinforceAgent
+from reinforce import ReinforceAgent, DialecticReinforceAgent
 
 # import pdb
 
@@ -29,7 +28,7 @@ class A2CAgent(ReinforceAgent):
         self.optim_v = torch.optim.Adam([
 			{'params': self.model._value.parameters()}
 		], lr=self.cfg.lr)
-        self.gamma = cfg.disconunt_gamma
+        self.gamma = cfg.discount_gamma
         self.model.eval()
         
 
@@ -57,10 +56,10 @@ class A2CAgent(ReinforceAgent):
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
         brain = self.model._brain
-        value_fn = self.model._value
+        value_func = self.model._value
             
         a = brain(obs)
-        v = value_fn(obs)
+        v = value_func(obs)
         brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
         action = brain_action.detach()
         return action.cpu(), (mu, log_sigma), v
@@ -95,9 +94,7 @@ class A2CAgent(ReinforceAgent):
         next_obs = torch.cat([td['obs'] for td in tds]).to(self.device)
         rewards = torch.cat([td['reward'] for td in tds]).to(self.device)
         dones = torch.cat([td['done'] for td in tds]).to(self.device)
-        # print('Reinforce: next_obs: ' , next_obs.shape)
         next_v = self.model._value(next_obs).squeeze(1)
-        # print('Reinforce: next_v: ' , next_v.shape)
         target_q = rewards + self.gamma * next_v * (1 - dones)
         return target_q#.to(self.device)
     
@@ -111,15 +108,24 @@ class A2CAgent(ReinforceAgent):
     def _calculate_action(self, a, action_dim, eval_mode):
         mus = a[:, :action_dim]
         if eval_mode:
-            actions = mus
-            return actions, mus, torch.zeros_like(mus).to(self.device)
+            return mus, mus, torch.zeros_like(mus).to(self.device)
         else:
-            log_sigmas = a[:, action_dim:]
+            log_sigmas = a[:, action_dim:2*action_dim]
             sigmas = torch.exp(log_sigmas)
             eps = torch.randn_like(sigmas)
             actions = mus + sigmas * eps
             return actions, mus, log_sigmas
-
+        
+    
+    def _calculate_loss_policy(self, rewards, log_probs, entropies):
+        R = torch.zeros_like(rewards[0])
+        loss = 0
+        for i in reversed(range(len(rewards))):
+            R = self.gamma * R + rewards[i]
+            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
+        loss = loss / len(rewards)
+        return loss
+    
     
     def _calculate_loss_value(self, values, target_qs):
         return F.mse_loss(values, target_qs.detach())
@@ -158,6 +164,99 @@ class A2CAgent(ReinforceAgent):
             "loss_v": loss,
         }
         
+        
+class A2COneModelAgent(A2CAgent):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
+        self.domain_module = importlib.import_module(f'envs.tasks.{self.domain}')
+        self.device = torch.device(cfg.device)
+        self._get_action_obs_dims()
+        cfg.obs_dim = self.obs_dim
+        cfg.action_dim = self.action_dim
+        
+        self.model = SingleOneModel(cfg).to(self.device)
+        self.optim = torch.optim.Adam([
+            {'params': self.model._brain.parameters()}
+        ], lr=self.cfg.lr)
+        self.gamma = cfg.discount_gamma
+        self.model.eval()
+        
+        
+    def act(self, obs, t0=False, eval_mode=False, task=None):
+        """
+        Select an action by planning in the latent space of the world model.
+
+        Args:
+            obs (torch.Tensor): Observation from the environment.
+            t0 (bool): Whether this is the first observation in the episode.
+            eval_mode (bool): Whether to use the mean of the action distribution.
+            task (int): Task index (only used for multi-task experiments).
+
+        Returns:
+            torch.Tensor: Action to take in the environment.
+        """
+        obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+        brain = self.model._brain
+            
+        output = brain(obs)
+        brain_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
+        v = self._calculate_value(output, self.action_dim)
+        action = brain_action.detach()
+        return action.cpu(), (mu, log_sigma), v
+    
+    
+    def _calculate_value(self, a, action_dim):
+        return a[:, 2*action_dim:]
+    
+    
+    def update(self, tds):
+        torch.autograd.set_detect_anomaly(True)
+        train_metrics = {}
+        target_qs = self._calculate_target_q(tds)
+        advantages = self._calculate_advantages(tds, target_qs)
+        train_metrics.update(self.update_model(tds, target_qs, advantages))
+
+        # Return training statistics
+        return train_metrics
+
+
+    def update_model(self, tds, target_qs, advantages, retain_graph=False):
+        actions = torch.cat([td['action'] for td in tds]).to(self.device)
+        mus = torch.cat([td['mu'] for td in tds])
+        log_sigmas = torch.cat([td['log_sigma'] for td in tds])
+        values = torch.cat([td['value'] for td in tds]).squeeze(1).squeeze(1)
+
+        loss_p, loss_v = self._update(self.optim, actions, advantages.detach(), values, target_qs, mus, log_sigmas, retain_graph=retain_graph)
+        
+        # Return training statistics
+        return {
+            "loss_p": loss_p,
+            "loss_v": loss_v,
+        }
+        
+        
+    def _update(self, optimizer, actions, rewards, values, target_qs, mus, log_sigmas, retain_graph=False):
+        log_probs = self.log_normal(actions, mus, log_sigmas)
+        log_probs = torch.clamp(log_probs, min=-100, max=0)  # clamp log_probs to prevent instability
+        entropies = self.entropy(log_sigmas)
+        loss_p = self._calculate_loss_policy(rewards, log_probs, entropies)
+        loss_v = self._calculate_loss_value(values, target_qs)
+        loss = loss_p + loss_v
+        optimizer.zero_grad()
+        loss.backward(retain_graph=retain_graph)
+        # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
+        optimizer.step()
+        return loss_p, loss_v
+    
+    
+    def _calculate_target_q(self, tds):#rewards, next_values, dones):
+        next_obs = torch.cat([td['obs'] for td in tds]).to(self.device)
+        rewards = torch.cat([td['reward'] for td in tds]).to(self.device)
+        dones = torch.cat([td['done'] for td in tds]).to(self.device)
+        next_v = self.model._brain(next_obs)[:, 2*self.action_dim:].squeeze(1)
+        target_q = rewards + self.gamma * next_v * (1 - dones)
+        return target_q#.to(self.device)
 
 
 class DialecticA2CAgent(DialecticReinforceAgent):

@@ -387,7 +387,7 @@ class DialecticImitation(DialecticAgent):
         self.optim_r = torch.optim.Adam([
 			{'params': self.model._brain_r.parameters()}
 		], lr=self.cfg.lr)
-        self.gamma = cfg.disconunt_gamma
+        self.gamma = cfg.discount_gamma
         self.model.eval()
     
     
