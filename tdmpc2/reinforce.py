@@ -309,6 +309,9 @@ class DialecticBase:
         self.act_individually = cfg.act_individually
         cfg.obs_dim = self.obs_dim
         self.obs_class = cfg.obs_class
+        self.td_agent = cfg.td_agent
+        self.horizon = cfg.horizon
+        self.gamma = cfg.discount_gamma
 
     def _get_action_obs_dims(self):
         def get_dim(desc_list, actor_key):
@@ -388,9 +391,9 @@ class DialecticReinforceAgent(DialecticBase):
             self.last_action_r = action
         if self.act_individually:
             action_indiv = torch.concat([self.last_action_l, self.last_action_r], dim=1).detach()
-            return action_indiv.cpu(), (mu, log_sigma), torch.zeros(1, 1), state, self.brain_switch
+            return action_indiv.cpu(), (mu, log_sigma), torch.zeros(1, 1), state, torch.zeros(1, self.obs_dim), self.brain_switch
         else:
-            return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), state, self.brain_switch
+            return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), state, torch.zeros(1, self.obs_dim), self.brain_switch
 
         
     def update(self, tds_l, tds_r):
@@ -431,23 +434,36 @@ class DialecticReinforceAgent(DialecticBase):
             return actions, mus, torch.zeros_like(mus).to(self.device)
         else:
             # stochastic
-            log_sigmas = a_dist[:, action_dim:]
+            log_sigmas = a_dist[:, action_dim:2*action_dim]
             sigmas = torch.exp(log_sigmas)
             eps = torch.randn_like(sigmas)
             actions = mus + sigmas * eps
             return actions, mus, log_sigmas
         
-    
-    def _calculate_loss_policy(self, rewards, log_probs, entropies):
-        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
-        R = torch.zeros_like(rewards[0])
-        loss = 0
-        for i in reversed(range(len(rewards))):
-            R = self.gamma * R + rewards[i]
-            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
-        loss = loss / len(rewards)
-        return loss
 
+    def _calculate_loss_policy(self, rewards, log_probs, entropies):
+        if len(rewards.shape) == 1:
+            rewards = rewards.unsqueeze(0)
+            log_probs = log_probs.unsqueeze(0)
+            entropies = entropies.unsqueeze(0)
+
+        batch_size = rewards.shape[0]
+        seq_length = rewards.shape[1]
+        
+        # R을 배치 크기에 맞게 초기화 (batch_size, 1, 1)
+        R = torch.zeros((batch_size, 1, 1), device=rewards.device)
+        loss = 0
+        
+        for i in reversed(range(seq_length)):
+            R = self.gamma * R + rewards[:, i].unsqueeze(-1).unsqueeze(-1)  # (batch_size, 1, 1)
+            
+            # log_probs[i]는 (batch_size, 1, 6) 형태
+            # R은 (batch_size, 1, 1) 형태로, 자동으로 브로드캐스팅됨
+            step_loss = -(log_probs[:, i] * R).sum(dim=(1, 2))  # (batch_size,)
+            loss = loss + step_loss.mean()  # 배치에 대한 평균
+        
+        loss = loss / seq_length
+        return loss
 
     # REINFORCE update
     def _update_p(self, optimizer, actions, rewards, mus, log_sigmas, retain_graph=False):
@@ -464,30 +480,67 @@ class DialecticReinforceAgent(DialecticBase):
 
     # REINFORCE (ref. https://dilithjay.com/blog/reinforce-a-quick-introduction-with-code)
     def update_policy_l(self, tds_l, retain_graph=False):
-        actions = torch.cat([td['action'] for td in tds_l]).to(self.device)
-        rewards = torch.cat([td['reward'] for td in tds_l])
-        mus = torch.cat([td['mu'] for td in tds_l])
-        log_sigmas = torch.cat([td['log_sigma'] for td in tds_l])
-        actions_l = actions[:, :, self.action_filter_l]
-
-        loss = self._update_p(self.optim_l, actions_l, rewards, mus, log_sigmas, retain_graph=retain_graph)
+        actions, rewards, mus, log_sigmas = self.get_policy_train_data(tds_l)
+        loss = self._update_p(self.optim_l, actions, rewards, mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {
             "loss_pi_l": loss,
         }
-        
+    
     def update_policy_r(self, tds_r, retain_graph=False):
-        actions = torch.cat([td['action'] for td in tds_r]).to(self.device)
-        rewards = torch.cat([td['reward'] for td in tds_r])
-        mus = torch.cat([td['mu'] for td in tds_r])
-        log_sigmas = torch.cat([td['log_sigma'] for td in tds_r])
-        actions_r = actions[:, :, self.action_filter_r]
-        
-        loss = self._update_p(self.optim_r, actions_r, rewards, mus, log_sigmas, retain_graph=retain_graph)
+        actions, rewards, mus, log_sigmas = self.get_policy_train_data(tds_r)
+        loss = self._update_p(self.optim_r, actions, rewards, mus, log_sigmas, retain_graph=retain_graph)
         
         # Return training statistics
         return {
             "loss_pi_r": loss,
         }
+    
 
+    def get_policy_train_data(self, _tds):
+        if self.td_agent:
+            idx = len(_tds) % self.horizon   # horizon으로 나누어 떨어지는 만큼만 데이터로 사용
+            action_list = []
+            reward_list = []
+            mu_list = []
+            log_sigma_list = []
+            while idx < len(_tds):
+                tds = _tds[idx:min(idx+self.horizon, len(_tds))]
+                action_list.append(torch.cat([td['action'] for td in tds]).to(self.device))
+                reward_list.append(torch.cat([td['reward'] for td in tds]))
+                mu_list.append(torch.cat([td['mu'] for td in tds]).to(self.device))
+                log_sigma_list.append(torch.cat([td['log_sigma'] for td in tds]).to(self.device))
+                idx += self.horizon
+            actions = torch.stack(action_list).permute(1, 0, 2, 3).to(self.device)
+            rewards = torch.stack(reward_list).permute(1, 0).to(self.device)
+            mus = torch.stack(mu_list).permute(1, 0, 2, 3).to(self.device)
+            log_sigmas = torch.stack(log_sigma_list).permute(1, 0, 2, 3).to(self.device)
+        else:
+            actions = torch.cat([td['action'] for td in _tds]).to(self.device)
+            rewards = torch.cat([td['reward'] for td in _tds]).to(self.device)
+            mus = torch.cat([td['mu'] for td in _tds]).to(self.device)
+            log_sigmas = torch.cat([td['log_sigma'] for td in _tds]).to(self.device)
+            
+        return actions, rewards, mus, log_sigmas
+
+    def save(self, fp):
+        """
+        Save state dict of the agent to filepath.
+        
+        Args:
+            fp (str): Filepath to save state dict to.
+        """
+        torch.save({"model": self.model.state_dict()}, fp)
+        
+        
+    def load(self, fp):
+        """
+        Load a saved state dict from filepath (or dictionary) into current agent.
+        
+        Args:
+            fp (str or dict): Filepath or state dict to load.
+        """
+        state_dict = fp if isinstance(fp, dict) else torch.load(fp)
+        self.model.load_state_dict(state_dict["model"])
+        

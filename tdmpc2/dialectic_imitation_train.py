@@ -13,7 +13,7 @@ from common.seed import set_seed
 from common.buffer import Buffer
 from envs import make_env
 from trainer.offline_trainer import OfflineTrainer
-from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer, OnlineDialecticImitationTrainer
+from trainer.online_trainer import OnlineDialecticImitationTrainer
 from common.logger import Logger
 from reinforce import DialecticReinforceAgent
 from a2c import DialecticA2CAgent

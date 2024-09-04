@@ -8,10 +8,10 @@ obs: state
 # evaluation
 checkpoint: ???
 eval_episodes: 10
-eval_freq: 50000
+eval_freq: 5000
 
 # device
-device: cuda
+device: cuda:0
 
 # training
 steps: 10_000_000
@@ -101,3 +101,4 @@ dialectic_agent: false
 act_individually: false
 agent_class: reinforce
 td_agent: true
+obs_class: false
