@@ -6,8 +6,7 @@ import importlib
 from common import math
 from common.scale import RunningScale
 from common.world_model import SingleModel, SinglePredictiveOneModel
-from common.dual_world_model import DualModel, DualWorldModel
-from common.world_model import SingleModel
+from common.dual_world_model import DualModel
 
 # import pdb
 
@@ -309,6 +308,7 @@ class DialecticBase:
         cfg.action_dim_r = self.action_dim_r
         self.act_individually = cfg.act_individually
         cfg.obs_dim = self.obs_dim
+        self.obs_class = cfg.obs_class
 
     def _get_action_obs_dims(self):
         def get_dim(desc_list, actor_key):
@@ -348,7 +348,7 @@ class DialecticReinforceAgent(DialecticBase):
         self.model = DualModel(cfg).to(self.device)
         self.optim_l = torch.optim.Adam([{'params': self.model._brain_l.parameters()}], lr=self.cfg.lr)
         self.optim_r = torch.optim.Adam([{'params': self.model._brain_r.parameters()}], lr=self.cfg.lr)
-        self.gamma = cfg.disconunt_gamma
+        self.gamma = cfg.discount_gamma
         self.model.eval()
     
     
@@ -365,6 +365,8 @@ class DialecticReinforceAgent(DialecticBase):
         Returns:
             torch.Tensor: Action to take in the environment.
         """
+        obs_total = obs
+        
         self.brain_switch = not self.brain_switch
         if self.brain_switch:  # left brain
             obs = obs[self.obs_filter_l].to(self.device, non_blocking=True).unsqueeze(0)
@@ -374,8 +376,8 @@ class DialecticReinforceAgent(DialecticBase):
             obs = obs[self.obs_filter_r].to(self.device, non_blocking=True).unsqueeze(0)
             brain = self.model._brain_r
             last_opposite_action = self.last_action_l.detach()
-        if cfg.obs_class == 'all':
-            obs = obs.to(self.device, non_blocking=True).unsqueeze(0)  ## 전체 스페이스로 테스트해보기
+        if self.obs_class == 'all':
+            obs = obs_total.to(self.device, non_blocking=True).unsqueeze(0)  ## 전체 스페이스로 테스트해보기
         state = torch.concat([obs, last_opposite_action], dim=1)
 
         a_dist = brain(state)
@@ -437,27 +439,13 @@ class DialecticReinforceAgent(DialecticBase):
         
     
     def _calculate_loss_policy(self, rewards, log_probs, entropies):
-        if len(rewards.shape) == 1:
-            rewards = rewards.unsqueeze(0)
-            log_probs = log_probs.unsqueeze(0)
-            entropies = entropies.unsqueeze(0)
-
-        batch_size = rewards.shape[0]
-        seq_length = rewards.shape[1]
-        
-        # R을 배치 크기에 맞게 초기화 (batch_size, 1, 1)
-        R = torch.zeros((batch_size, 1, 1), device=rewards.device)
+        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-6)  # normalize the rewards
+        R = torch.zeros_like(rewards[0])
         loss = 0
-        
-        for i in reversed(range(seq_length)):
-            R = self.gamma * R + rewards[:, i].unsqueeze(-1).unsqueeze(-1)  # (batch_size, 1, 1)
-            
-            # log_probs[i]는 (batch_size, 1, 6) 형태
-            # R은 (batch_size, 1, 1) 형태로, 자동으로 브로드캐스팅됨
-            step_loss = -(log_probs[:, i] * R).sum(dim=(1, 2))  # (batch_size,)
-            loss = loss + step_loss.mean()  # 배치에 대한 평균
-        
-        loss = loss / seq_length
+        for i in reversed(range(len(rewards))):
+            R = self.gamma * R + rewards[i]
+            loss = loss - (log_probs[i]*R).sum()# - (0.0001*entropies[i]).sum()
+        loss = loss / len(rewards)
         return loss
 
 
