@@ -316,22 +316,22 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 data_count = 0
             
             if self.cfg.act_individually:    
-                action, dist, value, state, pred, is_act_left = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action, dist, value, state, _, is_act_left = self.agent.act(obs, t0=len(self._tds_l)==1)
             else:
-                action_l, dist_l, value, state, pred, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
-                action_r, dist_r, value, state, pred, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_l, dist_l, value_l, state_l, _, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_r, dist_r, value_r, state_r, _, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
                 action = torch.concat([action_l, action_r], dim=1).detach()
             action_np = action[0].detach().cpu()#.numpy()
             next_obs, reward, done, info = self.env.step(action_np)
             done = torch.ones_like(reward) if done else torch.zeros_like(reward)
             if self.cfg.act_individually:
                 if is_act_left:
-                    self._tds_l.append(self.to_td(state, action_l, reward, dist[0], dist[1], value, done))
+                    self._tds_l.append(self.to_td(state, action, reward, dist[0], dist[1], value, done))
                 else:
-                    self._tds_r.append(self.to_td(state, action_r, reward, dist[0], dist[1], value, done))
+                    self._tds_r.append(self.to_td(state, action, reward, dist[0], dist[1], value, done))
             else:
-                self._tds_l.append(self.to_td(state, action_l, reward, dist_l[0], dist_l[1], value, done))
-                self._tds_r.append(self.to_td(state, action_r, reward, dist_r[0], dist_r[1], value, done))
+                self._tds_l.append(self.to_td(state_l, action_l, reward, dist_l[0], dist_l[1], value_l, done))
+                self._tds_r.append(self.to_td(state_r, action_r, reward, dist_r[0], dist_r[1], value_r, done))
 
             obs = next_obs
             self._step += 1
