@@ -208,7 +208,7 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
         super().__init__(cfg, env, agent, None, logger)
         
         
-    def to_td(self, obs, action=None, reward=None, mu=None, sigma_sq=None):
+    def to_td(self, obs, action=None, reward=None, mu=None, log_sigma=None, value=None, done=None):
         """Creates a TensorDict for a new episode."""
         if isinstance(obs, dict):
             obs = TensorDict(obs, batch_size=(), device='cpu')
@@ -220,14 +220,20 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
             reward = torch.tensor(float('nan'))
         if mu is None:
             mu = torch.full_like(self.env.rand_act(), float('nan'))
-        if sigma_sq is None:
-            sigma_sq = torch.full_like(self.env.rand_act(), float('nan'))
+        if log_sigma is None:
+            log_sigma = torch.full_like(self.env.rand_act(), float('nan'))
+        if value is None:
+            value = torch.tensor(float('nan'))
+        if done is None:
+            done = torch.tensor(float('nan'))
         td = TensorDict(dict(
             obs=obs,
             action=action.unsqueeze(0),
             reward=reward.unsqueeze(0),
             mu=mu.unsqueeze(0),
-            sigma_sq=sigma_sq.unsqueeze(0),
+            log_sigma=log_sigma.unsqueeze(0),
+            value=value.unsqueeze(0),
+            done=done.unsqueeze(0),
         ), batch_size=(1,))
         return td
     
@@ -242,16 +248,17 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 self.logger.video.init(self.env, enabled=(i==0))
             while not done:
                 if self.cfg.act_individually:
-                    action, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                    action, _, _, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
                 else:
-                    action_l, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
-                    action_r, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                    action_l, _, _, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
+                    action_r, _, _, _, _ = self.agent.act(obs, t0=t==0, eval_mode=True)
                     action = torch.concat([action_l, action_r], dim=1).detach()
                 obs, reward, done, info = self.env.step(action)
                 ep_reward += reward
                 t += 1
                 if self.cfg.save_video:
                     self.logger.video.record(self.env)
+                
             ep_rewards.append(ep_reward)
             ep_successes.append(info['success'])
             if self.cfg.save_video:
@@ -306,22 +313,24 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 data_count = 0
             
             if self.cfg.act_individually:    
-                action, is_act_left, dist = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action, dist, value, state, is_act_left = self.agent.act(obs, t0=len(self._tds_l)==1)
             else:
-                action_l, _, dist_l = self.agent.act(obs, t0=len(self._tds_l)==1)
-                action_r, _, dist_r= self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_l, dist_l, value, state, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_r, dist_r, value, state, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
                 action = torch.concat([action_l, action_r], dim=1).detach()
             action_np = action[0].detach().cpu()#.numpy()
-            obs, reward, done, info = self.env.step(action_np)
-            if not self.cfg.act_individually:
-                self._tds_l.append(self.to_td(obs, action, reward, dist_l[0], dist_l[1]))
-                self._tds_r.append(self.to_td(obs, action, reward, dist_r[0], dist_r[1]))
-            else:
+            next_obs, reward, done, info = self.env.step(action_np)
+            done = torch.ones_like(reward) if done else torch.zeros_like(reward)
+            if self.cfg.act_individually:
                 if is_act_left:
-                    self._tds_l.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+                    self._tds_l.append(self.to_td(state, action, reward, dist[0], dist[1], value, done))
                 else:
-                    self._tds_r.append(self.to_td(obs, action, reward, dist[0], dist[1]))
+                    self._tds_r.append(self.to_td(state, action, reward, dist[0], dist[1], value, done))
+            else:
+                self._tds_l.append(self.to_td(state, action, reward, dist_l[0], dist_l[1], value, done))
+                self._tds_r.append(self.to_td(state, action, reward, dist_r[0], dist_r[1], value, done))
 
+            obs = next_obs
             self._step += 1
             data_count += 1
 

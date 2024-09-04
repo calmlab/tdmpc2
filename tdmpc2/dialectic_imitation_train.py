@@ -12,10 +12,12 @@ from common.parser import parse_cfg
 from common.seed import set_seed
 from common.buffer import Buffer
 from envs import make_env
-from dialectic import DialecticMPC, DialecticImitation
 from trainer.offline_trainer import OfflineTrainer
 from trainer.online_trainer import OnlineTrainer, OnlineDialecticTrainer, OnlineDialecticImitationTrainer
 from common.logger import Logger
+from reinforce import DialecticReinforceAgent
+from a2c import DialecticA2CAgent
+
 
 torch.backends.cudnn.benchmark = True
 
@@ -46,11 +48,18 @@ def train(cfg: dict):
 	set_seed(cfg.seed)
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
 
+	if cfg.agent_class == 'reinforce':
+		agent_cls = DialecticReinforceAgent
+	elif cfg.agent_class == 'a2c':
+		agent_cls = DialecticA2CAgent
+	else:
+		raise ValueError(f'Invalid agent class: {cfg.agent}')
+
 	trainer_cls = OfflineTrainer if cfg.multitask else OnlineDialecticImitationTrainer
 	trainer = trainer_cls(
 		cfg=cfg,
 		env=make_env(cfg),
-		agent=DialecticImitation(cfg),
+		agent=agent_cls(cfg),
 		logger=Logger(cfg),
 	)
 	trainer.train()
