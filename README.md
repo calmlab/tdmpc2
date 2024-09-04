@@ -38,11 +38,13 @@ If you prefer to install dependencies manually, start by installing dependencies
 
 ```
 conda env create -f docker/environment.yaml
+conda activate tdmpc2
 pip install gym==0.21.0
 pip install --upgrade decorator==4.4.2
 ```
 
 The `environment.yaml` file installs dependencies required for training on DMControl tasks. Other domains can be installed by following the instructions in `environment.yaml`.
+(If you meet error while conda env create, try `conda config --set channel_priority flexible`.)
 
 If you want to run ManiSkill2, you will additionally need to download and link the necessary assets by running
 

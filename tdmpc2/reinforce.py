@@ -200,7 +200,7 @@ class ReinforceAgent:
 
 
 
-class DicreteReinforceAgent(ReinforceAgent):
+class ReinforceDiscreteAgent(ReinforceAgent):
     def __init__(self, cfg):
         self.cfg = cfg
         self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)

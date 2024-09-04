@@ -3,7 +3,7 @@ python tdmpc2/single_imitation_train.py \
         disable_wandb=true \
         device=cuda:1 \
         td_agent=false \
-        agent_class=reinforce_discrete
+        agent_class=a2c_discrete
 # python tdmpc2/train.py task=walker-walk
 # python tdmpc2/dialectic_train.py task=walker-walk
 
