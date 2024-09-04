@@ -5,7 +5,7 @@ import importlib
 
 from common import math
 from common.scale import RunningScale
-from common.world_model import SingleModel, SinglePredictiveOneModel
+from common.world_model import SingleModel, SingleDiscreteModel, SinglePredictiveOneModel
 
 # import pdb
 
@@ -197,7 +197,53 @@ class ReinforceAgent:
         """
         state_dict = fp if isinstance(fp, dict) else torch.load(fp)
         self.model.load_state_dict(state_dict["model"])
+
+
+
+class DicreteReinforceAgent(ReinforceAgent):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
+        self.domain_module = importlib.import_module(f'envs.tasks.{self.domain}')
+        self.device = torch.device(cfg.device)
+        self._get_action_obs_dims()
+        cfg.obs_dim = self.obs_dim
+        cfg.action_dim = self.action_dim
         
+        self.td_agent = cfg.td_agent
+        self.horizon = cfg.horizon
+        
+        self.model = SingleDiscreteModel(cfg).to(self.device)
+        self.optim = torch.optim.Adam([
+			{'params': self.model._encoder.parameters()},
+            {'params': self.model._brain.parameters()}
+		], lr=self.cfg.lr)
+        self.gamma = cfg.discount_gamma
+        self.model.eval()
+        
+        
+    def act(self, obs, t0=False, eval_mode=False, task=None):
+        """
+        Select an action by planning in the latent space of the world model.
+
+        Args:
+            obs (torch.Tensor): Observation from the environment.
+            t0 (bool): Whether this is the first observation in the episode.
+            eval_mode (bool): Whether to use the mean of the action distribution.
+            task (int): Task index (only used for multi-task experiments).
+
+        Returns:
+            torch.Tensor: Action to take in the environment.
+        """
+        obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+        encoder = self.model._encoder
+        brain = self.model._brain
+        
+        z = encoder(obs)    
+        a = brain(z)
+        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
+        action = brain_action.detach()
+        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), torch.zeros(1, self.obs_dim)
 
 
 class PredictiveReinforceAgent(ReinforceAgent):

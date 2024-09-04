@@ -1,8 +1,9 @@
 python tdmpc2/single_imitation_train.py \
         task=walker-walk \
-        disable_wandb=false \
+        disable_wandb=true \
         device=cuda:1 \
-        agent_class=a2c
+        td_agent=false \
+        agent_class=reinforce_discrete
 # python tdmpc2/train.py task=walker-walk
 # python tdmpc2/dialectic_train.py task=walker-walk
 
