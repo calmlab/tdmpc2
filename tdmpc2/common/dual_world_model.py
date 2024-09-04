@@ -177,13 +177,23 @@ class DualWorldModel(nn.Module):
 
 
 class DualModel(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self._brain_l = layers.mlp(cfg.obs_dim_l + cfg.action_dim_r, 2*[cfg.mlp_dim], 2*cfg.action_dim_l)
-        self._brain_r = layers.mlp(cfg.obs_dim_r + cfg.action_dim_l, 2*[cfg.mlp_dim], 2*cfg.action_dim_r)
-        self.apply(init.weight_init)
+	def __init__(self, cfg):
+		super().__init__()
 
-    @property
-    def total_params(self):
-        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+		if cfg.obs_class == 'all':
+			self.cfg = cfg
+			self._brain_l = layers.mlp(cfg.obs_dim + cfg.action_dim_r, 2*[cfg.mlp_dim], 2*cfg.action_dim_l)
+			self._brain_r = layers.mlp(cfg.obs_dim + cfg.action_dim_l, 2*[cfg.mlp_dim], 2*cfg.action_dim_r)
+		else:
+			self._brain_l = layers.mlp(cfg.obs_dim_l + cfg.action_dim_r, 2*[cfg.mlp_dim], 2*cfg.action_dim_l)
+			self._brain_r = layers.mlp(cfg.obs_dim_r + cfg.action_dim_l, 2*[cfg.mlp_dim], 2*cfg.action_dim_r)
+
+		if cfg.agent_class == 'a2c':
+			self._value = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 1)
+			# self._value_r = layers.mlp(cfg.obs_dim_r + cfg.action_dim_l, cfg.mlp_layers*[cfg.mlp_dim], 1)
+
+		self.apply(init.weight_init)
+
+	@property
+	def total_params(self):
+		return sum(p.numel() for p in self.parameters() if p.requires_grad)

@@ -157,7 +157,7 @@ class DialecticBase:
         cfg.action_dim_l = self.action_dim_l
         cfg.action_dim_r = self.action_dim_r
         self.act_individually = cfg.act_individually
-        
+        cfg.obs_dim = self.obs_dim
 
     def _get_action_obs_dims(self):
         def get_dim(desc_list, actor_key):
@@ -176,7 +176,7 @@ class DialecticBase:
         self.action_filter_r = [a['right_actor'] for a in action_desc]
         self.obs_filter_l = [a['left_actor'] for a in obs_desc]
         self.obs_filter_r = [a['right_actor'] for a in obs_desc]
-        
+        self.obs_dim = len(obs_desc)
     
     def reset(self):
         self.last_action_l = torch.zeros(self.action_dim_l, device=self.device).unsqueeze(0)
@@ -223,6 +223,8 @@ class DialecticReinforceAgent(DialecticBase):
             obs = obs[self.obs_filter_r].to(self.device, non_blocking=True).unsqueeze(0)
             brain = self.model._brain_r
             last_opposite_action = self.last_action_l.detach()
+        if cfg.obs_class == 'all':
+            obs = obs.to(self.device, non_blocking=True).unsqueeze(0)  ## 전체 스페이스로 테스트해보기
         state = torch.concat([obs, last_opposite_action], dim=1)
 
         a_dist = brain(state)
