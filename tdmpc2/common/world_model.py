@@ -222,3 +222,23 @@ class SinglePredictiveOneModel(nn.Module):
     def total_params(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
+
+
+class SingleDiscretePredictiveModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self._encoder = layers.mlp(cfg.obs_dim, max(cfg.num_enc_layers, 1)*[cfg.enc_dim], cfg.latent_dim, act=layers.SimNorm(cfg))
+        self._dynamics = layers.mlp(cfg.latent_dim + cfg.action_dim, 2*[cfg.mlp_dim], cfg.latent_dim, act=layers.SimNorm(cfg))
+        self._policy = layers.mlp(cfg.latent_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
+        self._value = layers.mlp(cfg.latent_dim, cfg.mlp_layers*[cfg.mlp_dim], 1)
+        self.apply(init.weight_init)
+
+    @property
+    def total_params(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+
+
+        

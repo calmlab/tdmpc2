@@ -5,7 +5,7 @@ import importlib
 
 from common import math
 from common.scale import RunningScale
-from common.world_model import SingleModel, SingleDiscreteModel, SinglePredictiveOneModel
+from common.world_model import SingleModel, SingleDiscreteModel, SinglePredictiveOneModel, SingleDiscretePredictiveModel
 
 # import pdb
 
@@ -345,9 +345,109 @@ class ReinforceDiscretePredictiveAgent(ReinforceAgent):
         cfg.obs_dim = self.obs_dim
         cfg.action_dim = self.action_dim
         
-        self.model = SinglePredictiveOneModel(cfg).to(self.device)
-        self.optim = torch.optim.Adam([
+        self.td_agent = cfg.td_agent
+        self.horizon = cfg.horizon
+        
+        self.model = SingleDiscretePredictiveModel(cfg).to(self.device)
+        self.optim_d = torch.optim.Adam([
+			{'params': self.model._encoder.parameters()},
+            {'params': self.model._dynamics.parameters()}
+		], lr=self.cfg.lr)
+        self.optim_p = torch.optim.Adam([
 			{'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
+        
+        
+    def act(self, obs, t0=False, eval_mode=False, task=None):
+        """
+        Select an action by planning in the latent space of the world model.
+
+        Args:
+            obs (torch.Tensor): Observation from the environment.
+            t0 (bool): Whether this is the first observation in the episode.
+            eval_mode (bool): Whether to use the mean of the action distribution.
+            task (int): Task index (only used for multi-task experiments).
+
+        Returns:
+            torch.Tensor: Action to take in the environment.
+        """
+        obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+        encoder = self.model._encoder
+        dynamics = self.model._dynamics
+        policy = self.model._policy
+        
+        z = encoder(obs)  
+        z_ = z.detach()
+        p_output = policy(z_)
+        policy_action, mu, log_sigma = self._calculate_action(p_output, self.action_dim, eval_mode)
+        action = policy_action.detach()
+        dynamics_input = torch.cat([z, action], dim=1)
+        pred_z = dynamics(dynamics_input)
+        return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), pred_z
+    
+    
+    def update(self, tds):
+        torch.autograd.set_detect_anomaly(True)
+        train_metrics = {}
+        train_metrics.update(self.update_worldmodel(tds))
+        train_metrics.update(self.update_policy(tds))
+        
+        # Return training statistics
+        return train_metrics
+    
+    
+    def update_worldmodel(self, tds, retain_graph=False):
+        pred_zs, next_obs = self.get_worldmodel_train_data(tds)
+        loss = self._update_d(self.optim_d, pred_zs, next_obs, retain_graph=retain_graph)
+        
+        # Return training statistics
+        return {
+            "loss_d": loss,
+        }
+        
+        
+    def update_policy(self, tds, retain_graph=False):
+        actions, rewards, mus, log_sigmas = self.get_policy_train_data(tds)
+        loss = self._update_p(self.optim_p, actions, rewards, mus, log_sigmas, retain_graph=retain_graph)
+        
+        # Return training statistics
+        return {
+            "loss_p": loss,
+        }
+        
+        
+    def _update_d(self, optimizer, pred_zs, next_obs, retain_graph=False):
+        loss = self._calculate_loss_dynamics(pred_zs, next_obs)
+        optimizer.zero_grad()
+        loss.backward(retain_graph=retain_graph)
+        # torch.nn.utils.clip_grad_norm_(self.model._policy, max_norm=1.0)
+        optimizer.step()
+        return loss
+        
+    
+    def _calculate_loss_dynamics(self, pred_zs, next_obs):
+        next_zs = self.model._encoder(next_obs)
+        return F.mse_loss(pred_zs, next_zs.detach())
+    
+    
+    def get_worldmodel_train_data(self, _tds):
+        if self.td_agent:
+            idx = len(_tds) % self.horizon   # horizon으로 나누어 떨어지는 만큼만 데이터로 사용
+            pred_list = []
+            obs_list = []
+            while idx < len(_tds):
+                tds = _tds[idx:min(idx+self.horizon, len(_tds))]
+                pred_list.append(torch.cat([td['pred'] for td in tds]).to(self.device))
+                obs_list.append(torch.cat([td['obs'].unsqueeze(0) for td in tds]).to(self.device))
+                idx += self.horizon
+            preds = torch.stack(pred_list).permute(1, 0, 2, 3).to(self.device)
+            next_obs = torch.stack(obs_list).permute(1, 0, 2, 3).to(self.device)
+        else:
+            preds = torch.cat([td['pred'] for td in _tds]).to(self.device)
+            next_obs = torch.cat([td['obs'] for td in _tds]).to(self.device)
+            
+        return preds, next_obs
+    
+    
