@@ -22,6 +22,7 @@ value_coef: 0.1
 consistency_coef: 20
 rho: 0.5
 lr: 3e-5
+value_lr: 1e-5
 enc_lr_scale: 0.3
 grad_clip_norm: 20
 tau: 0.01
