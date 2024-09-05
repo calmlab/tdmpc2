@@ -8,7 +8,7 @@ obs: state
 # evaluation
 checkpoint: ???
 eval_episodes: 10
-eval_freq: 5000
+eval_freq: 50000
 
 # device
 device: cuda:0
@@ -21,7 +21,7 @@ reward_coef: 0.1
 value_coef: 0.1
 consistency_coef: 20
 rho: 0.5
-lr: 3e-5
+lr: 3e-6
 enc_lr_scale: 0.3
 grad_clip_norm: 20
 tau: 0.01
@@ -71,6 +71,7 @@ simnorm_dim: 8
 wandb_project: dialectic-mujoco
 wandb_entity: calmlab
 wandb_silent: false
+# disable_wandb: true
 disable_wandb: false
 save_csv: true
 
@@ -100,5 +101,5 @@ action_dim_r: ???
 dialectic_agent: false
 act_individually: false
 agent_class: reinforce
-td_agent: true
+td_agent: false
 obs_class: false

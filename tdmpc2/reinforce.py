@@ -368,7 +368,7 @@ class DialecticReinforceAgent(DialecticBase):
         Returns:
             torch.Tensor: Action to take in the environment.
         """
-        obs_total = obs
+        obs_total = obs.clone()
         
         self.brain_switch = not self.brain_switch
         if self.brain_switch:  # left brain

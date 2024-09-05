@@ -319,7 +319,7 @@ class OnlineDialecticImitationTrainer(OnlineTrainer):
                 action, dist, value, state, _, is_act_left = self.agent.act(obs, t0=len(self._tds_l)==1)
             else:
                 action_l, dist_l, value_l, state_l, _, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
-                action_r, dist_r, value_r, state_r, _, _ = self.agent.act(obs, t0=len(self._tds_l)==1)
+                action_r, dist_r, value_r, state_r, _, _ = self.agent.act(obs, t0=len(self._tds_r)==1)
                 action = torch.concat([action_l, action_r], dim=1).detach()
             action_np = action[0].detach().cpu()#.numpy()
             next_obs, reward, done, info = self.env.step(action_np)
