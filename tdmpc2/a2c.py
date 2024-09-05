@@ -25,7 +25,7 @@ class A2CAgent(ReinforceAgent):
         
         self.model = SingleModel(cfg).to(self.device)
         self.optim_p = torch.optim.Adam([
-			{'params': self.model._brain.parameters()}
+			{'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.optim_v = torch.optim.Adam([
 			{'params': self.model._value.parameters()}
@@ -48,13 +48,13 @@ class A2CAgent(ReinforceAgent):
             torch.Tensor: Action to take in the environment.
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
-        brain = self.model._brain
+        policy = self.model._policy
         value_func = self.model._value
             
-        a = brain(obs)
+        a = policy(obs)
         v = value_func(obs)
-        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
-        action = brain_action.detach()
+        policy_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
+        action = policy_action.detach()
         return action.cpu(), (mu, log_sigma), v, torch.zeros(1, self.obs_dim)
 
         
@@ -167,7 +167,7 @@ class A2CDiscreteAgent(A2CAgent):
         self.model = SingleDiscreteModel(cfg).to(self.device)
         self.optim_p = torch.optim.Adam([
 			{'params': self.model._encoder.parameters()},
-            {'params': self.model._brain.parameters()}
+            {'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.optim_v = torch.optim.Adam([
 			{'params': self.model._value.parameters()}
@@ -191,14 +191,14 @@ class A2CDiscreteAgent(A2CAgent):
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
         encoder = self.model._encoder
-        brain = self.model._brain
+        policy = self.model._policy
         value_func = self.model._value
         
         z = encoder(obs)
-        a = brain(z)
+        a = policy(z)
         v = value_func(z.detach())
-        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
-        action = brain_action.detach()
+        policy_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
+        action = policy_action.detach()
         return action.cpu(), (mu, log_sigma), v, torch.zeros(1, self.obs_dim)
     
     
@@ -225,7 +225,7 @@ class A2CDiscreteAgent(A2CAgent):
         
 #         self.model = SingleOneModel(cfg).to(self.device)
 #         self.optim = torch.optim.Adam([
-#             {'params': self.model._brain.parameters()}
+#             {'params': self.model._policy.parameters()}
 #         ], lr=self.cfg.lr)
 #         self.gamma = cfg.discount_gamma
 #         self.model.eval()
@@ -245,12 +245,12 @@ class A2CDiscreteAgent(A2CAgent):
 #             torch.Tensor: Action to take in the environment.
 #         """
 #         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
-#         brain = self.model._brain
+#         policy = self.model._policy
             
-        # output = brain(obs)
-        # brain_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
+        # output = policy(obs)
+        # policy_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
         # v = self._calculate_value(output, self.action_dim)
-        # action = brain_action.detach()
+        # action = policy_action.detach()
         # return action.cpu(), (mu, log_sigma), v
     
     
@@ -293,7 +293,7 @@ class A2CDiscreteAgent(A2CAgent):
 #         loss = loss_p + loss_v
 #         optimizer.zero_grad()
 #         loss.backward(retain_graph=retain_graph)
-#         # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
+#         # torch.nn.utils.clip_grad_norm_(self.model._policy, max_norm=1.0)
 #         optimizer.step()
 #         return loss_p, loss_v
     
@@ -302,6 +302,6 @@ class A2CDiscreteAgent(A2CAgent):
 #         next_obs = torch.cat([td['obs'] for td in tds]).to(self.device)
 #         rewards = torch.cat([td['reward'] for td in tds]).to(self.device)
 #         dones = torch.cat([td['done'] for td in tds]).to(self.device)
-#         next_v = self.model._brain(next_obs)[:, 2*self.action_dim:].squeeze(1)
+#         next_v = self.model._policy(next_obs)[:, 2*self.action_dim:].squeeze(1)
 #         target_q = rewards + self.gamma * next_v * (1 - dones)
 #         return target_q#.to(self.device)

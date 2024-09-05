@@ -176,7 +176,7 @@ class SingleModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
+        self._policy = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
         self._value = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 1)
         self.apply(init.weight_init)
 
@@ -190,7 +190,7 @@ class SingleDiscreteModel(nn.Module):
         super().__init__()
         self.cfg = cfg
         self._encoder = layers.mlp(cfg.obs_dim, max(cfg.num_enc_layers, 1)*[cfg.enc_dim], cfg.latent_dim, act=layers.SimNorm(cfg))
-        self._brain = layers.mlp(cfg.latent_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
+        self._policy = layers.mlp(cfg.latent_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim)
         self._value = layers.mlp(cfg.latent_dim, cfg.mlp_layers*[cfg.mlp_dim], 1)
         self.apply(init.weight_init)
 
@@ -203,7 +203,7 @@ class SingleOneModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+1)  # +1 for value
+        self._policy = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+1)  # +1 for value
         self.apply(init.weight_init)
 
     @property
@@ -215,7 +215,7 @@ class SinglePredictiveOneModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+cfg.obs_dim+1)
+        self._policy = layers.mlp(cfg.obs_dim, cfg.mlp_layers*[cfg.mlp_dim], 2*cfg.action_dim+cfg.obs_dim+1)
         self.apply(init.weight_init)
 
     @property

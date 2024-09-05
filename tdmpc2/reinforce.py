@@ -24,7 +24,7 @@ class ReinforceAgent:
         
         self.model = SingleModel(cfg).to(self.device)
         self.optim = torch.optim.Adam([
-			{'params': self.model._brain.parameters()}
+			{'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
@@ -53,11 +53,11 @@ class ReinforceAgent:
             torch.Tensor: Action to take in the environment.
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
-        brain = self.model._brain
+        policy = self.model._policy
             
-        a = brain(obs)
-        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
-        action = brain_action.detach()
+        a = policy(obs)
+        policy_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
+        action = policy_action.detach()
         return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), torch.zeros(1, self.obs_dim)
 
         
@@ -135,7 +135,7 @@ class ReinforceAgent:
         loss = self._calculate_loss_policy(rewards, log_probs, entropies)
         optimizer.zero_grad()
         loss.backward(retain_graph=retain_graph)
-        # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(self.model._policy, max_norm=1.0)
         optimizer.step()
         return loss
 
@@ -216,7 +216,7 @@ class ReinforceDiscreteAgent(ReinforceAgent):
         self.model = SingleDiscreteModel(cfg).to(self.device)
         self.optim = torch.optim.Adam([
 			{'params': self.model._encoder.parameters()},
-            {'params': self.model._brain.parameters()}
+            {'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
@@ -237,16 +237,16 @@ class ReinforceDiscreteAgent(ReinforceAgent):
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
         encoder = self.model._encoder
-        brain = self.model._brain
+        policy = self.model._policy
         
         z = encoder(obs)    
-        a = brain(z)
-        brain_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
-        action = brain_action.detach()
+        a = policy(z)
+        policy_action, mu, log_sigma = self._calculate_action(a, self.action_dim, eval_mode)
+        action = policy_action.detach()
         return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), torch.zeros(1, self.obs_dim)
 
 
-class PredictiveReinforceAgent(ReinforceAgent):
+class ReinforcePredictiveAgent(ReinforceAgent):
     def __init__(self, cfg):
         self.cfg = cfg
         self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
@@ -258,7 +258,7 @@ class PredictiveReinforceAgent(ReinforceAgent):
         
         self.model = SinglePredictiveOneModel(cfg).to(self.device)
         self.optim = torch.optim.Adam([
-			{'params': self.model._brain.parameters()}
+			{'params': self.model._policy.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
@@ -278,12 +278,12 @@ class PredictiveReinforceAgent(ReinforceAgent):
             torch.Tensor: Action to take in the environment.
         """
         obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
-        brain = self.model._brain
+        policy = self.model._policy
             
-        output = brain(obs)
-        brain_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
+        output = policy(obs)
+        policy_action, mu, log_sigma = self._calculate_action(output, self.action_dim, eval_mode)
         pred = self._calculate_prediction(output, self.action_dim, self.obs_dim)
-        action = brain_action.detach()
+        action = policy_action.detach()
         return action.cpu(), (mu, log_sigma), torch.zeros(1, 1), pred
     
     
@@ -326,10 +326,28 @@ class PredictiveReinforceAgent(ReinforceAgent):
         loss = loss_p + loss_d
         optimizer.zero_grad()
         loss.backward(retain_graph=retain_graph)
-        # torch.nn.utils.clip_grad_norm_(self.model._brain, max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(self.model._policy, max_norm=1.0)
         optimizer.step()
         return loss_p, loss_d
     
     
     def _calculate_loss_dynamics(self, preds, next_obs):
         return F.mse_loss(preds, next_obs)
+    
+    
+class ReinforceDiscretePredictiveAgent(ReinforceAgent):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.domain, self.task = self.cfg.task.replace('-', '_').split('_', 1)
+        self.domain_module = importlib.import_module(f'envs.tasks.{self.domain}')
+        self.device = torch.device(cfg.device)
+        self._get_action_obs_dims()
+        cfg.obs_dim = self.obs_dim
+        cfg.action_dim = self.action_dim
+        
+        self.model = SinglePredictiveOneModel(cfg).to(self.device)
+        self.optim = torch.optim.Adam([
+			{'params': self.model._policy.parameters()}
+		], lr=self.cfg.lr)
+        self.gamma = cfg.discount_gamma
+        self.model.eval()

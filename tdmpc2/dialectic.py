@@ -46,7 +46,7 @@ class DialecticAgent:
     def reset(self):
         self.last_action_l = torch.zeros(self.action_dim_l, device=self.device).unsqueeze(0)
         self.last_action_r = torch.zeros(self.action_dim_r, device=self.device).unsqueeze(0)
-        self.brain_switch = False
+        self.policy_switch = False
 
 
 class DialecticMPC(DialecticAgent):
@@ -141,15 +141,15 @@ class DialecticMPC(DialecticAgent):
     
     @torch.no_grad()
     def rand_act(self, env):
-        self.brain_switch = not self.brain_switch
+        self.policy_switch = not self.policy_switch
         randact = env.rand_act()
-        if self.brain_switch:  # left brain
+        if self.policy_switch:  # left policy
             self.last_action_l = randact[self.action_filter_l].cuda()
         else:
             self.last_action_r = randact[self.action_filter_r].cuda()
             
         action = torch.concat([self.last_action_l, self.last_action_r], dim=0)
-        return action.cpu(), self.brain_switch
+        return action.cpu(), self.policy_switch
 
     @torch.no_grad()
     def _estimate_value(self, z, actions, task):
@@ -361,7 +361,7 @@ class DialecticMPC(DialecticAgent):
         obs_p = obs_l[:-1]
         inputs = torch.cat([obs_p, action_r], dim=2)
         
-        self.batch_update(self.model._brain_l, inputs, self.action_dim_l)
+        self.batch_update(self.model._policy_l, inputs, self.action_dim_l)
         
         # Return training statistics
         self.model.eval()
@@ -382,10 +382,10 @@ class DialecticImitation(DialecticAgent):
         
         self.model = DualModel(cfg).to(self.device)
         self.optim_l = torch.optim.Adam([
-			{'params': self.model._brain_l.parameters()}
+			{'params': self.model._policy_l.parameters()}
 		], lr=self.cfg.lr)
         self.optim_r = torch.optim.Adam([
-			{'params': self.model._brain_r.parameters()}
+			{'params': self.model._policy_r.parameters()}
 		], lr=self.cfg.lr)
         self.gamma = cfg.discount_gamma
         self.model.eval()
@@ -404,28 +404,28 @@ class DialecticImitation(DialecticAgent):
         Returns:
             torch.Tensor: Action to take in the environment.
         """
-        self.brain_switch = not self.brain_switch
-        if self.brain_switch:  # left brain
+        self.policy_switch = not self.policy_switch
+        if self.policy_switch:  # left policy
             obs = obs[self.obs_filter_l].to(self.device, non_blocking=True).unsqueeze(0)
-            brain = self.model._brain_l
+            policy = self.model._policy_l
             last_opposite_action = self.last_action_r.detach()
-        else:  # right brain
+        else:  # right policy
             obs = obs[self.obs_filter_r].to(self.device, non_blocking=True).unsqueeze(0)
-            brain = self.model._brain_r
+            policy = self.model._policy_r
             last_opposite_action = self.last_action_l.detach()
             
         state = torch.concat([obs, last_opposite_action], dim=1)
-        a = brain(state)
-        brain_action, mu, sigma_sq = self._calculate_action(a, self.action_dim_l if self.brain_switch else self.action_dim_r, eval_mode)
-        if self.brain_switch:  # left brain
-            self.last_action_l = brain_action
-        else:  # right brain
-            self.last_action_r = brain_action
+        a = policy(state)
+        policy_action, mu, sigma_sq = self._calculate_action(a, self.action_dim_l if self.policy_switch else self.action_dim_r, eval_mode)
+        if self.policy_switch:  # left policy
+            self.last_action_l = policy_action
+        else:  # right policy
+            self.last_action_r = policy_action
         if self.act_individually:
             action = torch.concat([self.last_action_l, self.last_action_r], dim=1).detach()
-            return action.cpu(), self.brain_switch, (mu, sigma_sq)
+            return action.cpu(), self.policy_switch, (mu, sigma_sq)
         else:
-            return brain_action.cpu(), self.brain_switch, (mu, sigma_sq)
+            return policy_action.cpu(), self.policy_switch, (mu, sigma_sq)
 
         
     def update(self, tds_l, tds_r):
@@ -474,7 +474,7 @@ class DialecticImitation(DialecticAgent):
 
 
     # REINFORCE update
-    def _update(self, brain, optimizer, actions, rewards, mus, sigma_sqs, retain_graph=False):
+    def _update(self, policy, optimizer, actions, rewards, mus, sigma_sqs, retain_graph=False):
         probs = self.normal(actions, mus, sigma_sqs)
         log_probs = probs.log()
         entropies = self.entropy(sigma_sqs)
@@ -492,7 +492,7 @@ class DialecticImitation(DialecticAgent):
         sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_l])
         actions_l = actions[:, :, self.action_filter_l]
 
-        loss = self._update(self.model._brain_l, self.optim_l, actions_l, rewards, mus, sigma_sqs, retain_graph=retain_graph)
+        loss = self._update(self.model._policy_l, self.optim_l, actions_l, rewards, mus, sigma_sqs, retain_graph=retain_graph)
         
         # Return training statistics
         return {
@@ -506,7 +506,7 @@ class DialecticImitation(DialecticAgent):
         sigma_sqs = torch.cat([td['sigma_sq'] for td in tds_r])
         actions_r = actions[:, :, self.action_filter_r]
         
-        loss = self._update(self.model._brain_r, self.optim_r, actions_r, rewards, mus, sigma_sqs, retain_graph=retain_graph)
+        loss = self._update(self.model._policy_r, self.optim_r, actions_r, rewards, mus, sigma_sqs, retain_graph=retain_graph)
         
         # Return training statistics
         return {

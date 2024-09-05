@@ -180,8 +180,8 @@ class DualModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._brain_l = layers.mlp(cfg.obs_dim_l + cfg.action_dim_r, 2*[cfg.mlp_dim], 2*cfg.action_dim_l)
-        self._brain_r = layers.mlp(cfg.obs_dim_r + cfg.action_dim_l, 2*[cfg.mlp_dim], 2*cfg.action_dim_r)
+        self._policy_l = layers.mlp(cfg.obs_dim_l + cfg.action_dim_r, 2*[cfg.mlp_dim], 2*cfg.action_dim_l)
+        self._policy_r = layers.mlp(cfg.obs_dim_r + cfg.action_dim_l, 2*[cfg.mlp_dim], 2*cfg.action_dim_r)
         self.apply(init.weight_init)
 
     @property
