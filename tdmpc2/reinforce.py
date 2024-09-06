@@ -350,7 +350,7 @@ class ReinforceDiscretePredictiveAgent(ReinforceAgent):
         
         self.model = SingleDiscretePredictiveModel(cfg).to(self.device)
         self.optim_d = torch.optim.Adam([
-			{'params': self.model._encoder.parameters()},
+			{'params': self.model._encoder.parameters(), 'lr': self.cfg.enc_lr},
             {'params': self.model._dynamics.parameters()}
 		], lr=self.cfg.lr)
         self.optim_p = torch.optim.Adam([
