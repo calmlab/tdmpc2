@@ -10,7 +10,7 @@ dependencies:
   - glib=2.68.4
   - pip=21.0
   - python=3.9.0
-  - pytorch>=2.2.2
+  - pytorch>=2.2.0
   - torchvision>=0.16.2
   - pip:
     - absl-py==2.0.0
@@ -39,9 +39,9 @@ dependencies:
     - protobuf==4.25.2
     - pillow==10.2.0
     - pyquaternion==0.9.9
-    - tensordict-nightly==2024.3.26
+    - tensordict-nightly
     - termcolor==2.4.0
-    - torchrl-nightly==2024.3.26
+    - torchrl-nightly
     - transforms3d==0.4.1
     - trimesh==4.0.9
     - tqdm==4.66.1

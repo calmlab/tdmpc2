@@ -8,7 +8,7 @@ obs: state
 # evaluation
 checkpoint: ???
 eval_episodes: 10
-eval_freq: 50000
+eval_freq: 5000
 
 # training
 steps: 10_000_000
@@ -62,7 +62,7 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: dialectic-mujoco
+wandb_project: dialectic_humanoid
 wandb_entity: calmlab
 wandb_silent: false
 disable_wandb: false
